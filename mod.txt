@@ -1,0 +1,74 @@
+{
+	"name" : "Briefing Enhanced",
+	"description" : "Manage skills, perk decks, weapon selection, purchases, sales, drag-and-drop inventory integration, modifications and statistics, and PD2Builder builds from the mission briefing.",
+	"author" : "CptTroufion",
+	"version" : "1.6.1",
+	"blt_version" : 2,
+	"priority" : -100,
+	"hooks" : [
+		{
+			"hook_id" : "lib/managers/menu/menucomponentmanager",
+			"script_path" : "lua/menu_component.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/missionbriefinggui",
+			"script_path" : "lua/core.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/missionbriefinggui",
+			"script_path" : "lua/weapon_purchase.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/playerinventorygui",
+			"script_path" : "lua/weapon_purchase.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/blackmarketgui",
+			"script_path" : "lua/weapon_purchase.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/missionbriefinggui",
+			"script_path" : "lua/menu_nodes.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/missionbriefinggui",
+			"script_path" : "lua/weapon_modifications.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/missionbriefinggui",
+			"script_path" : "lua/more_weapon_stats.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/missionbriefinggui",
+			"script_path" : "lua/weapon_modifications_gui.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/missionbriefinggui",
+			"script_path" : "lua/pd2builder.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/missionbriefinggui",
+			"script_path" : "lua/ehi_patch.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/missionbriefinggui",
+			"script_path" : "lua/briefing_ui.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/skilltreeguinew",
+			"script_path" : "lua/skilltree_close.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/specializationguinew",
+			"script_path" : "lua/specialization_close.lua"
+		},
+		{
+			"hook_id" : "lib/managers/chatmanager",
+			"script_path" : "lua/chat_patch.lua"
+		},
+		{
+			"hook_id" : "lib/managers/localizationmanager",
+			"script_path" : "lua/localization.lua"
+		}
+	]
+}
