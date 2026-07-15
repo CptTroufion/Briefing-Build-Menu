@@ -201,8 +201,6 @@ Chaque intégration est vérifiée au runtime. Une intégration absente ou désa
 | Drag and Drop Inventory | Déplacement et permutation des armes dans les grilles du briefing | Équipement, achat et vente disponibles |
 | More Weapon Stats | Valeurs supplémentaires de rechargement, délais, ramassage, recul, dispersion et portée | Statistiques vanilla disponibles |
 | PD2Builder loader | Ajoute `IMPORT BUILD` et `EXPORT BUILD` dans `BUILD` | Entrées masquées |
-| EHI | Masque temporairement les éléments d'XP incompatibles du briefing | Aucun ajustement propre à EHI |
-| API compatible de traduction du chat | Demande la traduction des messages reçus | Chat normal |
 
 Les mods optionnels ne sont pas inclus avec Briefing Enhanced.
 
