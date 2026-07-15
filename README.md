@@ -55,8 +55,6 @@ The mod checks every optional integration at runtime. Missing or disabled integr
 | Drag and Drop Inventory | Move and swap weapons from briefing weapon grids | Equip, purchase and sale remain available |
 | More Weapon Stats | Extra reload, delay, pickup, recoil, spread and falloff values | Vanilla statistics remain available |
 | PD2Builder loader | Adds `IMPORT BUILD` and `EXPORT BUILD` to `BUILD` | Both entries are hidden |
-| EHI | Temporarily hides conflicting briefing XP elements | No EHI-specific adjustment |
-| Compatible chat translator API | Requests translation for received messages | Normal chat behavior |
 
 Optional mods are not bundled with Briefing Enhanced.
 
