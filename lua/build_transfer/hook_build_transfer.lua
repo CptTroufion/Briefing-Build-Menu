@@ -1,0 +1,5 @@
+local mod_path = ModPath
+
+dofile(mod_path .. "lua/core/bootstrap.lua")
+dofile(BriefingEnhanced.ModPath .. "lua/build_transfer/adapter_pd2builder.lua")
+
