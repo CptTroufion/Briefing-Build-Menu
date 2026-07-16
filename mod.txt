@@ -2,7 +2,7 @@
 	"name" : "Briefing Enhanced",
 	"description" : "Manage skills, perk decks, weapon selection, purchases, sales, drag-and-drop inventory integration, modifications and statistics, and PD2Builder builds from the mission briefing.",
 	"author" : "CptTroufion",
-	"version" : "1.7.0",
+	"version" : "1.7.1",
 	"blt_version" : 2,
 	"priority" : -100,
 	"hooks" : [
