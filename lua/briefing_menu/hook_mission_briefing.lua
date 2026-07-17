@@ -4,6 +4,8 @@ dofile(mod_path .. "lua/core/bootstrap.lua")
 dofile(BriefingEnhanced.ModPath .. "lua/briefing_menu/factory_briefing_node.lua")
 dofile(BriefingEnhanced.ModPath .. "lua/skill_tree/controller_skill_tree.lua")
 dofile(BriefingEnhanced.ModPath .. "lua/perk_deck/controller_perk_deck.lua")
+dofile(BriefingEnhanced.ModPath .. "lua/outfit/service_outfit_menu.lua")
+dofile(BriefingEnhanced.ModPath .. "lua/outfit/controller_outfit.lua")
 dofile(BriefingEnhanced.ModPath .. "lua/briefing_menu/controller_briefing_menu.lua")
 dofile(BriefingEnhanced.ModPath .. "lua/briefing_menu/view_briefing_button.lua")
 
@@ -86,4 +88,3 @@ if not BE.HookMissionBriefing.installed then
 		return original_mouse_moved(gui, x, y)
 	end)
 end
-

@@ -1,8 +1,8 @@
 {
 	"name" : "Briefing Enhanced",
-	"description" : "Manage skills, perk decks, weapon selection, purchases, sales, drag-and-drop inventory integration, modifications and statistics, and PD2Builder builds from the mission briefing.",
+	"description" : "Manage skills, perk decks, outfits, gloves, weapon selection, purchases, sales, drag-and-drop inventory integration, modifications and statistics, and PD2Builder builds from the mission briefing.",
 	"author" : "CptTroufion",
-	"version" : "1.7.1",
+	"version" : "1.8.1",
 	"blt_version" : 2,
 	"priority" : -100,
 	"hooks" : [
@@ -25,6 +25,10 @@
 		{
 			"hook_id" : "lib/managers/menu/blackmarketgui",
 			"script_path" : "lua/weapon_inventory/hook_weapon_inventory.lua"
+		},
+		{
+			"hook_id" : "lib/managers/menu/blackmarketgui",
+			"script_path" : "lua/outfit/hook_outfit.lua"
 		},
 		{
 			"hook_id" : "lib/managers/menu/missionbriefinggui",

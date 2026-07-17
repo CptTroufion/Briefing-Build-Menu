@@ -30,6 +30,18 @@ function BE.ControllerBriefingMenu:show()
 			end
 		},
 		{
+			text = managers.localization:text("bm_menu_player_styles"),
+			callback = function()
+				BE.ControllerOutfit:open_player_styles()
+			end
+		},
+		{
+			text = managers.localization:text("bm_menu_gloves"),
+			callback = function()
+				BE.ControllerOutfit:open_gloves()
+			end
+		},
+		{
 			text = managers.localization:text("bbm_weapon_modifications"),
 			callback = function()
 				BE.ControllerWeaponModification:show_weapon_choice()

@@ -2,15 +2,15 @@
 
 # Briefing Enhanced
 
-**Briefing Enhanced** extends the PAYDAY 2 mission briefing with a central `BUILD` menu. It lets players configure skills and perk decks, manage their primary and secondary weapons, buy or sell weapons, modify equipped weapons through a safe 2D interface, inspect weapon statistics, and optionally import or export builds with PD2Builder—without leaving the lobby briefing.
+**Briefing Enhanced** extends the PAYDAY 2 mission briefing with a central `BUILD` menu. It lets players configure skills, perk decks, player styles, gloves and weapons, modify equipped weapons through a safe 2D interface, inspect weapon statistics, and optionally import or export builds with PD2Builder—without leaving the lobby briefing.
 
-Version: **1.7.0**  
+Version: **1.8.1**  
 Author: **CptTroufion**  
 Required runtime: **PAYDAY 2 + SuperBLT**
 
 - [English](#english)
 - [Français](#français)
-- [Technical documentation](TECHNICAL_DOCUMENTATION.md)
+- [Technical documentation](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md)
 
 ---
 
@@ -21,6 +21,7 @@ Required runtime: **PAYDAY 2 + SuperBLT**
 - Central `BUILD` button in the mission briefing.
 - Open the vanilla skill tree from the briefing.
 - Open the vanilla perk deck selection from the briefing.
+- Open the vanilla player-style and glove screens directly from `BUILD`.
 - Browse equipped primary and secondary weapon categories.
 - Equip, purchase and sell weapons through vanilla BlackMarket actions.
 - Optional weapon drag-and-drop integration.
@@ -55,6 +56,7 @@ The mod checks every optional integration at runtime. Missing or disabled integr
 | Drag and Drop Inventory | Move and swap weapons from briefing weapon grids | Equip, purchase and sale remain available |
 | More Weapon Stats | Extra reload, delay, pickup, recoil, spread and falloff values | Vanilla statistics remain available |
 | PD2Builder loader | Adds `IMPORT BUILD` and `EXPORT BUILD` to `BUILD` | Both entries are hidden |
+| Market Favorites | Adds favorite actions, `FAV` badges and favorites-first sorting to the reused weapon-store, player-style and glove grids | Vanilla grids remain unchanged |
 
 Optional mods are not bundled with Briefing Enhanced.
 
@@ -83,6 +85,8 @@ After installation, SuperBLT should list the mod as **Briefing Enhanced**.
 
    - `SKILL TREE`;
    - perk deck selection;
+   - player styles;
+   - gloves;
    - `WEAPON MODIFICATIONS`;
    - `IMPORT BUILD` or `EXPORT BUILD` when PD2Builder loader is available.
 
@@ -94,6 +98,15 @@ After installation, SuperBLT should list the mod as **Briefing Enhanced**.
 4. Use the available vanilla action to sell an eligible weapon.
 
 The last usable weapon in a category cannot be sold. Unsafe 3D preview actions are disabled only in this briefing context.
+
+### Player styles and gloves
+
+1. Open `BUILD`.
+2. Choose the vanilla player-style or glove entry.
+3. Equip an unlocked item with the standard BlackMarket action.
+4. Return to the briefing with the normal Back action.
+
+These entries reuse the briefing's vanilla `loadout` node and its `BlackMarketGui` component. Preview and customization actions are hidden in this context because their 3D scene or nested node is not available; standard equip actions remain. If Market Favorites is installed and enabled, its add/remove action, `FAV` badge and favorites-first sorting appear automatically. Briefing Enhanced does not call or require the Market Favorites namespace.
 
 ### Weapon modifications
 
@@ -131,7 +144,7 @@ PAYDAY 2/crash.txt
 
 The source is organized using one feature per folder. Hooks connect game classes to controllers, services contain rules and transactions, views render UI, and adapters isolate optional mods.
 
-Read [TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md) before changing the code. It includes:
+Read [TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md) before changing the code. It includes:
 
 - a beginner explanation of SuperBLT loading;
 - the exact hook-to-file map;
@@ -160,13 +173,14 @@ Created by **CptTroufion**. Inspired by the idea of managing build-related scree
 
 ## Description
 
-**Briefing Enhanced** enrichit le briefing de mission de PAYDAY 2 avec un menu central `BUILD`. Il permet de configurer les compétences et le perk deck, de gérer les armes principale et secondaire, d'acheter ou vendre des armes, de modifier l'arme équipée dans une interface 2D sûre, de consulter ses statistiques et, optionnellement, d'importer ou exporter un build avec PD2Builder sans quitter le lobby.
+**Briefing Enhanced** enrichit le briefing de mission de PAYDAY 2 avec un menu central `BUILD`. Il permet de configurer les compétences, le perk deck, la tenue, les gants et les armes, de modifier l'arme équipée dans une interface 2D sûre, de consulter ses statistiques et, optionnellement, d'importer ou exporter un build avec PD2Builder sans quitter le lobby.
 
 ## Fonctionnalités
 
 - Bouton central `BUILD` dans le briefing.
 - Ouverture de l'arbre de compétences vanilla.
 - Ouverture de la sélection des perk decks vanilla.
+- Ouverture des écrans vanilla de tenues et de gants directement depuis `BUILD`.
 - Consultation des catégories d'armes principale et secondaire.
 - Équipement, achat et vente avec les actions BlackMarket vanilla.
 - Intégration optionnelle du glisser-déposer des armes.
@@ -201,6 +215,7 @@ Chaque intégration est vérifiée au runtime. Une intégration absente ou désa
 | Drag and Drop Inventory | Déplacement et permutation des armes dans les grilles du briefing | Équipement, achat et vente disponibles |
 | More Weapon Stats | Valeurs supplémentaires de rechargement, délais, ramassage, recul, dispersion et portée | Statistiques vanilla disponibles |
 | PD2Builder loader | Ajoute `IMPORT BUILD` et `EXPORT BUILD` dans `BUILD` | Entrées masquées |
+| Market Favorites | Ajoute les actions de favori, le badge `FAV` et le tri des favoris en tête aux grilles réutilisées du magasin, des tenues et des gants | Les grilles vanilla restent inchangées |
 
 Les mods optionnels ne sont pas inclus avec Briefing Enhanced.
 
@@ -229,6 +244,8 @@ Après l'installation, SuperBLT doit afficher le mod sous le nom **Briefing Enha
 
    - `SKILL TREE` ;
    - sélection du perk deck ;
+   - tenues ;
+   - gants ;
    - `WEAPON MODIFICATIONS` ;
    - `IMPORT BUILD` ou `EXPORT BUILD` si PD2Builder loader est disponible.
 
@@ -240,6 +257,15 @@ Après l'installation, SuperBLT doit afficher le mod sous le nom **Briefing Enha
 4. Employer l'action vanilla disponible pour vendre une arme éligible.
 
 La dernière arme utilisable d'une catégorie ne peut pas être vendue. Les actions de prévisualisation 3D dangereuses sont désactivées uniquement dans ce contexte de briefing.
+
+### Tenues et gants
+
+1. Ouvrir `BUILD`.
+2. Choisir l'entrée vanilla des tenues ou des gants.
+3. Équiper un élément déverrouillé avec l'action BlackMarket standard.
+4. Revenir au briefing avec l'action Retour normale.
+
+Ces entrées réutilisent le nœud vanilla `loadout` du briefing et son composant `BlackMarketGui`. Les actions de prévisualisation et de personnalisation sont masquées dans ce contexte, car leur scène 3D ou leur nœud imbriqué n'est pas disponible ; les actions d'équipement standard restent présentes. Si Market Favorites est installé et activé, son action d'ajout/retrait, son badge `FAV` et son tri des favoris en tête apparaissent automatiquement. Briefing Enhanced n'appelle pas le namespace de Market Favorites et ne le requiert pas.
 
 ### Modifications d'armes
 
@@ -277,7 +303,7 @@ PAYDAY 2/crash.txt
 
 Le code suit la règle « une fonctionnalité, un dossier ». Les hooks raccordent les classes du jeu, les contrôleurs coordonnent les parcours, les services contiennent les règles et transactions, les vues dessinent l'interface et les adaptateurs isolent les mods optionnels.
 
-Lire [TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md) avant de modifier le code. Ce document contient :
+Lire [TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md) avant de modifier le code. Ce document contient :
 
 - une explication du chargement SuperBLT pour débuter ;
 - la carte exacte des hooks et fichiers ;

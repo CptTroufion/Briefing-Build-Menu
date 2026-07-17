@@ -1,6 +1,6 @@
 # Briefing Enhanced — Technical Documentation
 
-Version documented: **1.7.0**  
+Version documented: **1.8.1**  
 Runtime: **PAYDAY 2 / SuperBLT / LuaJIT (Lua 5.1)**
 
 - [English](#english)
@@ -15,6 +15,7 @@ Runtime: **PAYDAY 2 / SuperBLT / LuaJIT (Lua 5.1)**
 Briefing Enhanced adds a `BUILD` entry to the mission briefing. It lets the player manage the current build without leaving the briefing:
 
 - skill tree and perk deck;
+- player styles and gloves through the vanilla briefing BlackMarket flow;
 - primary and secondary weapon selection;
 - weapon purchase, sale and optional drag-and-drop;
 - mechanical weapon modifications through a safe 2D interface;
@@ -99,12 +100,13 @@ This distinction is essential when debugging:
 ```text
 Briefing Build Menu/
 ├── mod.txt
-├── TECHNICAL_DOCUMENTATION.md
+├── TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md
 └── lua/
     ├── core/
     ├── briefing_menu/
     ├── skill_tree/
     ├── perk_deck/
+    ├── outfit/
     ├── weapon_inventory/
     ├── weapon_modification/
     ├── build_transfer/
@@ -118,6 +120,7 @@ Briefing Build Menu/
 | `briefing_menu/` | `BUILD` button, context menu and `kit_menu` node creation |
 | `skill_tree/` | Skill tree opening, input restriction and close cleanup |
 | `perk_deck/` | Perk deck opening and close cleanup |
+| `outfit/` | Builds the vanilla loadout tabs, opens them and removes unsafe outfit actions |
 | `weapon_inventory/` | Weapon selection, purchase, sale and Drag and Drop Inventory integration |
 | `weapon_modification/` | Part discovery, transactions, 2D component, rendering and statistics |
 | `build_transfer/` | Optional PD2Builder loader integration |
@@ -178,10 +181,11 @@ Start here when you need to know why a file is loaded. The left column is the PA
 | `lib/managers/menu/missionbriefinggui` | `weapon_inventory/hook_weapon_inventory.lua` | Loads the inventory service/adapter and hooks `NewLoadoutTab` or `LoadoutItem` |
 | `lib/managers/menu/playerinventorygui` | `weapon_inventory/hook_weapon_inventory.lua` | The same entry detects `RequiredScript` and hooks `PlayerInventoryGui` |
 | `lib/managers/menu/blackmarketgui` | `weapon_inventory/hook_weapon_inventory.lua` | The same entry hooks BlackMarket population and sale completion |
+| `lib/managers/menu/blackmarketgui` | `outfit/hook_outfit.lua` | Removes preview/customization actions only from marked briefing outfit tabs |
 | `lib/managers/menu/missionbriefinggui` | `weapon_modification/hook_weapon_modification.lua` | Loads modification service, controller, stats adapter/presenter, component and view |
 | `lib/managers/menu/missionbriefinggui` | `build_transfer/hook_build_transfer.lua` | Loads the PD2Builder adapter |
 | `lib/managers/menu/missionbriefinggui` | `compatibility/hook_ehi.lua` | Loads the EHI adapter; actual installation waits for the EHI method |
-| `lib/managers/menu/missionbriefinggui` | `briefing_menu/hook_mission_briefing.lua` | Loads briefing modules and hooks init/hide/close/mouse methods |
+| `lib/managers/menu/missionbriefinggui` | `briefing_menu/hook_mission_briefing.lua` | Loads briefing modules, outfit controller and hooks init/hide/close/mouse methods |
 | `lib/managers/menu/skilltreeguinew` | `skill_tree/hook_skill_tree.lua` | Loads the skill controller and hooks legends, special input and close |
 | `lib/managers/menu/specializationguinew` | `perk_deck/hook_perk_deck.lua` | Loads the perk controller and hooks close |
 | `lib/managers/chatmanager` | `compatibility/hook_chat.lua` | Loads the chat adapter and registers its later menu initialization callback |
@@ -198,6 +202,7 @@ hook_mission_briefing
   ├─ controller_briefing_menu
   ├─ view_briefing_button
   ├─ controller_skill_tree
+  ├─ controller_outfit
   └─ controller_perk_deck
 
 Weapon inventory
@@ -243,6 +248,7 @@ BeardLib is **not** required by the current architecture.
 | Drag and Drop Inventory | Enabled BLT mod plus `DragDropInventory` and required manager methods | Move/swap actions in weapon grids | Normal equip, purchase and sale remain |
 | More Weapon Stats | Enabled BLT mod plus initialized `MoreWeaponStats` and `Faker` APIs | Extra statistic rows | Vanilla statistics remain |
 | PD2Builder loader | Enabled BLT mod plus `BuilderLoader.load_build` and `upload_build` | Import/Export entries | Entries are hidden |
+| Market Favorites | Its independent `BlackMarketGui` hooks are active | Favorite actions, `FAV` badges and sorting in reused weapon, player-style and glove grids | Vanilla BlackMarket grids |
 | EHI | Runtime presence of `MissionBriefingGui.AddXPBreakdown` | Hides/restores EHI briefing elements | No EHI-specific action |
 | Chat translator API | Runtime presence of `ChatTranslatorMessage` | Translation request for received messages | Normal chat remains |
 
@@ -262,7 +268,7 @@ A service must not know how a button is drawn. A view must not directly buy, sel
 
 ## 10. Briefing session lifecycle
 
-`StateBriefingSession` is the shared lifecycle boundary for screens opened from the briefing.
+`StateBriefingSession` is the shared lifecycle boundary for custom nodes and build editors opened from the briefing.
 
 ```text
 User selects an option
@@ -278,6 +284,8 @@ User selects an option
 ```
 
 While a screen is open, `Global.block_update_outfit_information` prevents the briefing from updating an incomplete intermediate loadout. Its previous value is stored and restored exactly. Opening failures reset the session immediately. A legacy `opened_from_briefing` value can also be adopted during a SuperBLT reload.
+
+The player-style and glove entries are an intentional exception. The briefing owns a `MissionBriefingGui` and `NewLoadoutTab`, not a `PlayerInventoryGui`. `ControllerOutfit` opens the existing vanilla `loadout` node in `kit_menu`, so its transition and Back navigation remain authoritative. Starting a second `StateBriefingSession` around that flow would duplicate its lifecycle and could block outfit publication.
 
 ## 11. Feature flows
 
@@ -315,7 +323,15 @@ ControllerBriefingMenu option
 
 The perk deck follows the same chain through `controller_perk_deck.lua`, `SpecializationGuiNew` and `hook_perk_deck.lua`.
 
-### 11.3 Weapon selection, purchase and sale
+### 11.3 Player styles and gloves
+
+`ControllerBriefingMenu` exposes separate player-style and glove entries using the game's localized labels. `ServiceOutfitMenu` creates two standard BlackMarket tab definitions using `populate_player_styles` and `populate_gloves`; `ControllerOutfit` selects tab 1 or 2 and opens the existing `loadout` node.
+
+The reused `BlackMarketGui` retains vanilla cell population and equip callbacks. The marked context removes `trd_preview`, `trd_customize`, `hnd_preview` and BeardLib's `hnd_customize`, because those actions require the unavailable 3D preview path or an outfit customization node outside `kit_menu`. Equip, DLC and favorite actions remain available.
+
+Market Favorites integration is passive and optional. When installed, its existing hooks on `populate_player_styles` and `populate_gloves` decorate these reused grids automatically. Briefing Enhanced neither detects Market Favorites nor calls its namespace, so either mod remains usable alone.
+
+### 11.4 Weapon selection, purchase and sale
 
 The inventory feature is enabled only when the active menu is `kit_menu` and the internal context targets `primaries` or `secondaries`.
 
@@ -329,13 +345,13 @@ The inventory feature is enabled only when the active menu is `kit_menu` and the
 
 The same `hook_weapon_inventory.lua` is deliberately registered for three game scripts. `RequiredScript` selects only the matching branch: briefing/loadout creation, `PlayerInventoryGui` category selection, or `BlackMarketGui` action population. All action rules are centralized in `service_weapon_inventory.lua`; the hook should only collect context and pass game data to that service.
 
-### 11.4 Drag and Drop Inventory
+### 11.5 Drag and Drop Inventory
 
 `AdapterDragDropInventory` exposes the integration only when the dependency is installed, enabled and all required APIs exist. The mod then lets the dependency perform pickup, placement and profile-safe swaps. Briefing Enhanced does not duplicate its permutation logic. Without the dependency, purchase and sale remain available.
 
 The adapter is loaded by `hook_weapon_inventory.lua`. `ServiceWeaponInventory` asks `AdapterDragDropInventory:is_available()` while building actions. When available, the hook removes the loadout-only marker from the briefing weapon node so the dependency's existing handlers can process the grid.
 
-### 11.5 Weapon modifications
+### 11.6 Weapon modifications
 
 Weapon modifications use a dedicated 2D component registered on `MenuComponentManager`.
 
@@ -353,7 +369,7 @@ UI creation has two separate entry moments. `hook_menu_component.lua` runs when 
 
 The component is registered under the historical `bbm_weapon_modifications` ID. Legacy manager methods and the `BriefingWeaponModificationsGui` global remain aliases for compatibility.
 
-### 11.6 Weapon statistics
+### 11.7 Weapon statistics
 
 `PresenterWeaponStatistics` builds preview data without changing the real blueprint. Vanilla `TOTAL / BASE / MOD / SKILL` values come from `WeaponDescription._get_stats`.
 
@@ -361,13 +377,13 @@ The component is registered under the historical `bbm_weapon_modifications` ID. 
 
 Data path: selected part in `ComponentWeaponModification` → `PresenterWeaponStatistics:get_data()` → vanilla `WeaponDescription._get_stats` plus optional `AdapterMoreWeaponStats:get_rows()` → rendering in `view_weapon_modification.lua`.
 
-### 11.7 PD2Builder
+### 11.8 PD2Builder
 
 `AdapterPd2Builder` checks that **PD2Builder loader** is enabled and that `BuilderLoader` exposes the expected methods. Import and Export appear in the `BUILD` menu only when those checks pass. A post-hook on `BuilderLoader:set_build` refreshes outfit information after an import.
 
 `hook_build_transfer.lua` only loads the adapter. `ControllerBriefingMenu` performs the availability check when building the QuickMenu, so enabling/disabling the dependency changes whether the entries are displayed without duplicating the menu logic.
 
-### 11.8 EHI and chat
+### 11.9 EHI and chat
 
 - `AdapterEhi` detects EHI's late-added XP breakdown method, surrounds it with pre/post hooks and temporarily hides the captured elements while a build screen is open.
 - `AdapterChat` preserves access to chat inside the custom flow and optionally requests translation when the relevant translator API exists.
@@ -498,6 +514,8 @@ After editing:
 - Start the game and enter a lobby without errors.
 - Open and close `BUILD` repeatedly.
 - Open skill tree and perk deck, apply a change and return.
+- Open player styles and gloves from `BUILD`, equip an item, return and repeat.
+- Repeat the player-style and glove test with Market Favorites enabled and disabled.
 - Equip, buy and sell primary and secondary weapons.
 - Repeat inventory tests with Drag and Drop Inventory enabled and disabled.
 - Install, replace and remove weapon parts; test pagination and controller/mouse input.
@@ -515,6 +533,7 @@ After editing:
 Briefing Enhanced ajoute une entrée `BUILD` au briefing de mission. Elle permet de gérer le build courant sans quitter le briefing :
 
 - arbre de compétences et perk deck ;
+- tenues et gants via le parcours BlackMarket vanilla du briefing ;
 - sélection des armes principale et secondaire ;
 - achat, vente et glisser-déposer optionnel des armes ;
 - modifications mécaniques des armes dans une interface 2D sûre ;
@@ -599,12 +618,13 @@ Cette distinction est essentielle pour diagnostiquer un problème :
 ```text
 Briefing Build Menu/
 ├── mod.txt
-├── TECHNICAL_DOCUMENTATION.md
+├── TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md
 └── lua/
     ├── core/
     ├── briefing_menu/
     ├── skill_tree/
     ├── perk_deck/
+    ├── outfit/
     ├── weapon_inventory/
     ├── weapon_modification/
     ├── build_transfer/
@@ -618,6 +638,7 @@ Briefing Build Menu/
 | `briefing_menu/` | Bouton `BUILD`, menu contextuel et création des nœuds du `kit_menu` |
 | `skill_tree/` | Ouverture, restriction des entrées et nettoyage de l'arbre de compétences |
 | `perk_deck/` | Ouverture et nettoyage du menu des perk decks |
+| `outfit/` | Construit et ouvre les onglets vanilla du loadout, puis retire les actions dangereuses |
 | `weapon_inventory/` | Sélection, achat, vente et intégration de Drag and Drop Inventory |
 | `weapon_modification/` | Recherche des pièces, transactions, composant 2D, rendu et statistiques |
 | `build_transfer/` | Intégration optionnelle de PD2Builder loader |
@@ -678,10 +699,11 @@ Commencez ici pour comprendre pourquoi un fichier est chargé. La colonne de gau
 | `lib/managers/menu/missionbriefinggui` | `weapon_inventory/hook_weapon_inventory.lua` | Charge le service/adaptateur d'inventaire et hooke `NewLoadoutTab` ou `LoadoutItem` |
 | `lib/managers/menu/playerinventorygui` | `weapon_inventory/hook_weapon_inventory.lua` | La même entrée détecte `RequiredScript` et hooke `PlayerInventoryGui` |
 | `lib/managers/menu/blackmarketgui` | `weapon_inventory/hook_weapon_inventory.lua` | La même entrée hooke le remplissage BlackMarket et la fin d'une vente |
+| `lib/managers/menu/blackmarketgui` | `outfit/hook_outfit.lua` | Retire prévisualisation/personnalisation seulement des onglets de tenue marqués du briefing |
 | `lib/managers/menu/missionbriefinggui` | `weapon_modification/hook_weapon_modification.lua` | Charge service, contrôleur, adaptateur/presenter de statistiques, composant et vue |
 | `lib/managers/menu/missionbriefinggui` | `build_transfer/hook_build_transfer.lua` | Charge l'adaptateur PD2Builder |
 | `lib/managers/menu/missionbriefinggui` | `compatibility/hook_ehi.lua` | Charge l'adaptateur EHI ; l'installation réelle attend la méthode EHI |
-| `lib/managers/menu/missionbriefinggui` | `briefing_menu/hook_mission_briefing.lua` | Charge le briefing et hooke init/hide/close ainsi que la souris |
+| `lib/managers/menu/missionbriefinggui` | `briefing_menu/hook_mission_briefing.lua` | Charge le briefing, le contrôleur de tenue et hooke init/hide/close ainsi que la souris |
 | `lib/managers/menu/skilltreeguinew` | `skill_tree/hook_skill_tree.lua` | Charge le contrôleur et hooke légendes, entrée spéciale et fermeture |
 | `lib/managers/menu/specializationguinew` | `perk_deck/hook_perk_deck.lua` | Charge le contrôleur de perk deck et hooke la fermeture |
 | `lib/managers/chatmanager` | `compatibility/hook_chat.lua` | Charge l'adaptateur de chat et enregistre son callback d'initialisation du menu |
@@ -698,6 +720,7 @@ hook_mission_briefing
   ├─ controller_briefing_menu
   ├─ view_briefing_button
   ├─ controller_skill_tree
+  ├─ controller_outfit
   └─ controller_perk_deck
 
 Inventaire des armes
@@ -743,6 +766,7 @@ BeardLib n'est **pas** requis par l'architecture actuelle.
 | Drag and Drop Inventory | Mod BLT activé, global `DragDropInventory` et méthodes de managers requises | Déplacement/permutation dans les grilles d'armes | Équipement, achat et vente normaux |
 | More Weapon Stats | Mod BLT activé et API `MoreWeaponStats`/`Faker` initialisées | Lignes de statistiques supplémentaires | Statistiques vanilla |
 | PD2Builder loader | Mod BLT activé et méthodes `BuilderLoader.load_build`/`upload_build` | Entrées Import/Export | Entrées masquées |
+| Market Favorites | Ses hooks `BlackMarketGui` autonomes sont actifs | Actions de favori, badges `FAV` et tri dans les grilles réutilisées des armes, tenues et gants | Grilles BlackMarket vanilla |
 | EHI | Présence runtime de `MissionBriefingGui.AddXPBreakdown` | Masquage/restauration des éléments EHI | Aucune action propre à EHI |
 | API de traduction du chat | Présence runtime de `ChatTranslatorMessage` | Demande de traduction des messages reçus | Chat normal |
 
@@ -762,7 +786,7 @@ Un service ne doit pas savoir comment un bouton est dessiné. Une vue ne doit pa
 
 ## 10. Cycle de vie d'une session de briefing
 
-`StateBriefingSession` délimite tous les écrans ouverts depuis le briefing.
+`StateBriefingSession` délimite les nœuds custom et éditeurs de build ouverts depuis le briefing.
 
 ```text
 L'utilisateur sélectionne une option
@@ -778,6 +802,8 @@ L'utilisateur sélectionne une option
 ```
 
 Pendant l'ouverture, `Global.block_update_outfit_information` empêche le briefing de publier un loadout intermédiaire incomplet. Sa valeur précédente est mémorisée puis restaurée exactement. Un échec d'ouverture réinitialise immédiatement la session. Une ancienne valeur `opened_from_briefing` peut aussi être reprise après un rechargement SuperBLT.
+
+Les entrées de tenue et de gants constituent une exception volontaire. Le briefing possède un `MissionBriefingGui` et un `NewLoadoutTab`, pas un `PlayerInventoryGui`. `ControllerOutfit` ouvre le nœud vanilla `loadout` déjà présent dans le `kit_menu` : sa transition et son Retour restent donc autoritaires. Démarrer une seconde `StateBriefingSession` autour de ce parcours doublerait son cycle de vie et pourrait bloquer la publication de l'outfit.
 
 ## 11. Parcours des fonctionnalités
 
@@ -815,7 +841,15 @@ Option de ControllerBriefingMenu
 
 Le perk deck suit la même chaîne avec `controller_perk_deck.lua`, `SpecializationGuiNew` et `hook_perk_deck.lua`.
 
-### 11.3 Sélection, achat et vente d'armes
+### 11.3 Tenues et gants
+
+`ControllerBriefingMenu` expose deux entrées distinctes avec les libellés localisés du jeu. `ServiceOutfitMenu` crée deux définitions d'onglets BlackMarket standard avec `populate_player_styles` et `populate_gloves` ; `ControllerOutfit` sélectionne l'onglet 1 ou 2 et ouvre le nœud `loadout` existant.
+
+Le `BlackMarketGui` réutilisé conserve le remplissage des cellules et les callbacks d'équipement vanilla. Dans ce contexte marqué, le hook retire `trd_preview`, `trd_customize`, `hnd_preview` et `hnd_customize` de BeardLib, car ces actions exigent une prévisualisation 3D indisponible ou un nœud de personnalisation absent du `kit_menu`. Les actions d'équipement, de DLC et de favoris restent disponibles.
+
+L'intégration de Market Favorites est passive et optionnelle. Lorsqu'il est installé, ses hooks existants sur `populate_player_styles` et `populate_gloves` décorent automatiquement ces grilles réutilisées. Briefing Enhanced ne détecte pas Market Favorites et n'appelle pas son namespace ; chaque mod reste donc utilisable seul.
+
+### 11.4 Sélection, achat et vente d'armes
 
 La fonctionnalité d'inventaire n'est active que si le menu courant est `kit_menu` et si le contexte interne vise `primaries` ou `secondaries`.
 
@@ -829,13 +863,13 @@ La fonctionnalité d'inventaire n'est active que si le menu courant est `kit_men
 
 Le même `hook_weapon_inventory.lua` est volontairement enregistré sur trois scripts du jeu. `RequiredScript` sélectionne uniquement la branche correspondante : création du briefing/loadout, sélection de catégorie dans `PlayerInventoryGui`, ou construction des actions dans `BlackMarketGui`. Toutes les règles d'action sont centralisées dans `service_weapon_inventory.lua` ; le hook doit seulement capturer le contexte et transmettre les données du jeu au service.
 
-### 11.4 Drag and Drop Inventory
+### 11.5 Drag and Drop Inventory
 
 `AdapterDragDropInventory` n'active l'intégration que si la dépendance est installée, activée et expose toutes les API nécessaires. Le mod laisse alors la dépendance gérer la prise, le placement et les permutations compatibles avec les profils. Briefing Enhanced ne duplique pas cette logique. Sans la dépendance, l'achat et la vente continuent de fonctionner.
 
 L'adaptateur est chargé par `hook_weapon_inventory.lua`. `ServiceWeaponInventory` appelle `AdapterDragDropInventory:is_available()` lors de la création des actions. Si elle est disponible, le hook retire le marqueur réservé au loadout du nœud d'armes du briefing afin que les handlers existants de la dépendance puissent traiter la grille.
 
-### 11.5 Modifications d'armes
+### 11.6 Modifications d'armes
 
 Les modifications utilisent un composant 2D dédié enregistré sur `MenuComponentManager`.
 
@@ -853,7 +887,7 @@ La création de l'UI possède deux moments d'entrée distincts. `hook_menu_compo
 
 Le composant reste enregistré sous l'ID historique `bbm_weapon_modifications`. Les anciennes méthodes du manager et le global `BriefingWeaponModificationsGui` restent des alias de compatibilité.
 
-### 11.6 Statistiques d'armes
+### 11.7 Statistiques d'armes
 
 `PresenterWeaponStatistics` construit un aperçu sans modifier le vrai blueprint. Les colonnes vanilla `TOTAL / BASE / MOD / SKILL` proviennent de `WeaponDescription._get_stats`.
 
@@ -861,13 +895,13 @@ Le composant reste enregistré sous l'ID historique `bbm_weapon_modifications`. 
 
 Chemin des données : pièce sélectionnée dans `ComponentWeaponModification` → `PresenterWeaponStatistics:get_data()` → `WeaponDescription._get_stats` vanilla plus `AdapterMoreWeaponStats:get_rows()` optionnel → rendu dans `view_weapon_modification.lua`.
 
-### 11.7 PD2Builder
+### 11.8 PD2Builder
 
 `AdapterPd2Builder` vérifie que **PD2Builder loader** est activé et que `BuilderLoader` expose les méthodes attendues. Import et Export n'apparaissent dans `BUILD` que si ces vérifications réussissent. Un post-hook sur `BuilderLoader:set_build` rafraîchit l'outfit après un import.
 
 `hook_build_transfer.lua` charge uniquement l'adaptateur. `ControllerBriefingMenu` vérifie sa disponibilité lors de la construction du QuickMenu : activer ou désactiver la dépendance change donc l'affichage des entrées sans dupliquer la logique du menu.
 
-### 11.8 EHI et chat
+### 11.9 EHI et chat
 
 - `AdapterEhi` détecte la méthode d'aperçu d'XP ajoutée tardivement par EHI, l'entoure de pre/post-hooks et masque temporairement les éléments capturés pendant l'ouverture d'un écran de build.
 - `AdapterChat` conserve l'accès au chat dans le parcours custom et demande optionnellement une traduction si l'API correspondante existe.
@@ -998,6 +1032,8 @@ Après l'édition :
 - Démarrer le jeu et rejoindre un lobby sans erreur.
 - Ouvrir et fermer `BUILD` plusieurs fois.
 - Ouvrir l'arbre de compétences et le perk deck, appliquer une modification et revenir.
+- Ouvrir les tenues et les gants depuis `BUILD`, équiper un élément, revenir puis répéter.
+- Répéter le test des tenues et des gants avec Market Favorites activé puis désactivé.
 - Équiper, acheter et vendre des armes principales et secondaires.
 - Répéter les tests d'inventaire avec Drag and Drop Inventory activé puis désactivé.
 - Installer, remplacer et retirer des pièces ; tester pagination, souris et manette.
