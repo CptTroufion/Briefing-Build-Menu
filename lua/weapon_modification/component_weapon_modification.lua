@@ -17,7 +17,10 @@ function Component:init(ws, fullscreen_ws, node)
 	self._ws = ws
 	self._fullscreen_ws = fullscreen_ws
 	self._node = node
-	self._category = (node:parameters().menu_component_data or {}).category or "primaries"
+	local component_data = node:parameters().menu_component_data or {}
+
+	self._category = component_data.category or "primaries"
+	self._slot = component_data.slot
 	self._type_index = 1
 	self._selected_index = 1
 	self._page = 1
@@ -44,7 +47,7 @@ function Component:close()
 end
 
 function Component:refresh()
-	self._data = BE.ServiceWeaponModification:get_data(self._category)
+	self._data = BE.ServiceWeaponModification:get_data(self._category, self._slot)
 
 	if not self._data then
 		BE.ServiceDialog:show_error("bbm_weapon_error", self._category)
@@ -74,6 +77,8 @@ function Component:_get_part_status(part)
 		return "bbm_part_equipped", COLORS.friend
 	elseif part.type_locked then
 		return "bbm_part_locked", COLORS.important_1
+	elseif part.achievement_locked then
+		return "bbm_part_achievement_locked", COLORS.important_1
 	elseif not part.can_modify then
 		return "bbm_part_incompatible", COLORS.important_1
 	elseif part.amount < 1 then
@@ -193,9 +198,9 @@ function Component:confirm_pressed()
 	local action = self:_get_part_action(part)
 
 	if action == "remove" then
-		BE.ServiceWeaponModification:confirm_remove(self._category, self:_current_type(), part)
+		BE.ServiceWeaponModification:confirm_remove(self._category, self:_current_type(), part, self._slot)
 	elseif action == "install" then
-		BE.ServiceWeaponModification:confirm_install(self._category, self:_current_type(), part)
+		BE.ServiceWeaponModification:confirm_install(self._category, self:_current_type(), part, self._slot)
 	else
 		managers.menu_component:post_event("menu_error")
 	end

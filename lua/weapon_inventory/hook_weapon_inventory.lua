@@ -82,7 +82,7 @@ elseif required_script == "lib/managers/menu/blackmarketgui" and not BE.HookWeap
 	Hooks:PreHook(BlackMarketGui, "populate_weapon_category_new", "BriefingBuildMenu_BlackMarketGui_populate_weapon_category_new", function(_, data)
 		if Inventory:is_active(data and data.category) then
 			data.allow_buy = true
-			data.allow_modify = false
+			data.allow_modify = true
 			data.allow_preview = false
 			data.allow_sell = true
 			data.allow_skinning = false
@@ -99,4 +99,3 @@ elseif required_script == "lib/managers/menu/blackmarketgui" and not BE.HookWeap
 		end
 	end)
 end
-

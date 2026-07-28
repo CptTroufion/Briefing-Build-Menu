@@ -37,7 +37,7 @@ function BE.ControllerWeaponModification:show_weapon_choice()
 	)
 end
 
-function BE.ControllerWeaponModification:open(category)
+function BE.ControllerWeaponModification:open(category, slot)
 	if not BE.FactoryBriefingNode:ensure_all() then
 		return false
 	end
@@ -50,7 +50,10 @@ function BE.ControllerWeaponModification:open(category)
 		return false
 	end
 
-	node:parameters().menu_component_data = { category = category }
+	node:parameters().menu_component_data = {
+		category = category,
+		slot = slot
+	}
 
 	return BE.ControllerMenuNavigation:open("weapon_modifications", node_name)
 end
@@ -68,11 +71,10 @@ function BE:show_weapon_choice()
 	return self.ControllerWeaponModification:show_weapon_choice()
 end
 
-function BE:open_weapon_modifications(category)
-	return self.ControllerWeaponModification:open(category)
+function BE:open_weapon_modifications(category, slot)
+	return self.ControllerWeaponModification:open(category, slot)
 end
 
 function BE:refresh_weapon_modifications_gui()
 	return self.ControllerWeaponModification:refresh()
 end
-

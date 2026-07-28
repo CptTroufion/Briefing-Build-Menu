@@ -9,12 +9,21 @@ Hooks:Add("LocalizationManagerPostInit", "BriefingBuildMenu_LocalizationManagerP
 		bbm_weapon_choice_description = "Choose the equipped weapon you want to modify.",
 		bbm_primary_weapon = "PRIMARY WEAPON",
 		bbm_secondary_weapon = "SECONDARY WEAPON",
+		bbm_weapon_context_title = "$WEAPON",
+		bbm_weapon_context_description = "Choose an action for this weapon.",
+		bbm_weapon_context_inventory = "OPEN INVENTORY",
+		bbm_armor_context_title = "LOADOUT",
+		bbm_armor_context_description = "Choose what you want to configure.",
+		bbm_armor_context_gloves = "GLOVES",
+		bbm_armor_context_outfit = "OUTFIT",
+		bbm_armor_context_armor = "ARMOR",
 		bbm_part_equipped = "EQUIPPED",
 		bbm_part_available = "AVAILABLE",
 		bbm_part_unowned = "NOT OWNED",
 		bbm_part_unaffordable = "NOT ENOUGH CASH",
 		bbm_part_incompatible = "INCOMPATIBLE",
 		bbm_part_locked = "CATEGORY LOCKED",
+		bbm_part_achievement_locked = "ACHIEVEMENT LOCKED",
 		bbm_part_owned = "OWNED: $AMOUNT",
 		bbm_part_price = "PRICE: $PRICE",
 		bbm_weapon_stats = "WEAPON STATISTICS",
@@ -31,9 +40,8 @@ Hooks:Add("LocalizationManagerPostInit", "BriefingBuildMenu_LocalizationManagerP
 		bbm_export_build = "EXPORT BUILD",
 		bbm_error_title = "BUILD MENU ERROR",
 		bbm_open_error = "The requested screen could not be opened:\n$ERROR",
-		bbm_weapon_error = "The equipped weapon could not be found for category '$ERROR'.",
+		bbm_weapon_error = "The weapon could not be found for category '$ERROR'.",
 		bbm_weapon_transaction_error = "The weapon modification '$ERROR' could not be applied. The current blueprint was left unchanged or rejected by the game.",
 		bbm_builder_error = "PD2Builder loader could not complete the operation:\n$ERROR"
 	})
 end)
-

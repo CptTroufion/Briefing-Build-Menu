@@ -1,16 +1,15 @@
-*Generated Code by Codex.
-
 # Briefing Enhanced
 
-**Briefing Enhanced** extends the PAYDAY 2 mission briefing with a central `BUILD` menu. It lets players configure skills, perk decks, player styles, gloves and weapons, modify equipped weapons through a safe 2D interface, inspect weapon statistics, and optionally import or export builds with PD2Builder—without leaving the lobby briefing.
+**Briefing Enhanced** extends the PAYDAY 2 mission briefing with a central `BUILD` menu. Configure skills, perk decks, outfits, gloves and weapons without leaving the lobby, then modify owned weapons through a briefing-safe 2D interface.
 
-Version: **1.8.1**  
+Version: **1.10.0**  
 Author: **CptTroufion**  
-Required runtime: **PAYDAY 2 + SuperBLT**
+Required: **PAYDAY 2 + SuperBLT**
+Optional: **BeardLib for automatic update checks and installation**
 
 - [English](#english)
 - [Français](#français)
-- [Technical documentation](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md)
+- [Developer documentation](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md)
 
 ---
 
@@ -18,154 +17,137 @@ Required runtime: **PAYDAY 2 + SuperBLT**
 
 ## Features
 
-- Central `BUILD` button in the mission briefing.
-- Open the vanilla skill tree from the briefing.
-- Open the vanilla perk deck selection from the briefing.
-- Open the vanilla player-style and glove screens directly from `BUILD`.
-- Browse equipped primary and secondary weapon categories.
-- Equip, purchase and sell weapons through vanilla BlackMarket actions.
-- Optional weapon drag-and-drop integration.
-- Modify the currently equipped primary or secondary weapon.
-- Browse modification categories and multiple pages of available parts.
-- See equipped, available, incompatible, unaffordable and unowned part states.
+- Open the vanilla skill tree and perk deck screens from `BUILD`.
+- Open the vanilla player-style and glove grids from `BUILD`.
+- Right-click the briefing primary or secondary slot to open its inventory or modify it.
+- Right-click the briefing armor slot to open Gloves, Outfit or Armor.
+- Equip, buy and sell weapons through the vanilla BlackMarket actions.
+- Right-click an owned weapon in the briefing BlackMarket to sell or modify that exact slot.
+- Browse weapon-part categories and pages in a dedicated 2D screen.
+- Inspect part availability, ownership, price, description and achievement locks.
 - Install, replace or remove parts through vanilla confirmations and transactions.
-- Display vanilla `TOTAL / BASE / MOD / SKILL` weapon statistics.
-- Optional additional statistics from More Weapon Stats.
-- Optional PD2Builder build import and export.
-- Compatibility handling for EHI and briefing chat.
+- Compare vanilla `TOTAL / BASE / MOD / SKILL` weapon statistics.
+- Use optional integrations with Drag and Drop Inventory, More Weapon Stats and PD2Builder loader.
+- Keep briefing chat accessible while custom screens are open, and temporarily hide EHI's overlapping XP panel before restoring it on close.
 
-## Why a custom 2D weapon modification screen?
+## Why a 2D weapon modification screen?
 
-The vanilla weapon workshop expects the BlackMarket 3D scene to exist. That scene is not guaranteed inside the mission briefing and can cause crashes, especially when other inventory mods also hook the workshop.
+The vanilla workshop requires the BlackMarket 3D scene. That scene is not guaranteed in the mission briefing and may crash when workshop or inventory mods expect `managers.menu_scene`.
 
-Briefing Enhanced therefore uses a dedicated 2D interface. It keeps the important vanilla behavior—compatible parts, inventory amounts, prices, confirmations and BlackMarket transactions—without creating a weapon preview scene.
-
-## Requirements
-
-- PAYDAY 2.
-- [SuperBLT](https://superblt.znix.xyz/).
-
-BeardLib is not required.
-
-## Optional integrations
-
-The mod checks every optional integration at runtime. Missing or disabled integrations do not prevent the base features from working.
-
-| Integration | Added behavior | Behavior when unavailable |
-|---|---|---|
-| Drag and Drop Inventory | Move and swap weapons from briefing weapon grids | Equip, purchase and sale remain available |
-| More Weapon Stats | Extra reload, delay, pickup, recoil, spread and falloff values | Vanilla statistics remain available |
-| PD2Builder loader | Adds `IMPORT BUILD` and `EXPORT BUILD` to `BUILD` | Both entries are hidden |
-| Market Favorites | Adds favorite actions, `FAV` badges and favorites-first sorting to the reused weapon-store, player-style and glove grids | Vanilla grids remain unchanged |
-
-Optional mods are not bundled with Briefing Enhanced.
+Briefing Enhanced therefore reuses vanilla weapon data, compatibility rules, prices, confirmations and transactions without opening the 3D preview.
 
 ## Installation
 
-1. Install SuperBLT.
-2. Download or clone this repository.
-3. Copy the `Briefing Build Menu` folder into:
-
-   ```text
-   PAYDAY 2/mods/Briefing Build Menu/
-   ```
-
-4. Confirm that `mod.txt` is directly inside that folder and not inside an additional archive directory.
+1. Install [SuperBLT](https://superblt.znix.xyz/).
+2. Install [BeardLib](https://modworkshop.net/mod/14924) if you want in-game update checks.
+3. Copy `Briefing Build Menu` into `PAYDAY 2/mods/`.
+4. Ensure `mod.txt` and `main.xml` are directly inside that folder.
 5. Start or restart PAYDAY 2.
 
-After installation, SuperBLT should list the mod as **Briefing Enhanced**.
+SuperBLT displays the installed mod as **Briefing Enhanced**.
+
+When BeardLib is installed, it checks the official [ModWorkshop page](https://modworkshop.net/mod/57999) from the main menu. Updates are shown in the BeardLib Mods Manager and remain user-confirmed; restart PAYDAY 2 after installation.
 
 ## Usage
 
-### BUILD menu
+### BUILD
 
-1. Join or host a game and reach the mission briefing.
-2. Select `BUILD`.
-3. Choose an available action:
+Open the mission briefing and select `BUILD`. The menu provides:
 
-   - `SKILL TREE`;
-   - perk deck selection;
-   - player styles;
-   - gloves;
-   - `WEAPON MODIFICATIONS`;
-   - `IMPORT BUILD` or `EXPORT BUILD` when PD2Builder loader is available.
+- `SKILL TREE`;
+- perk deck selection;
+- player styles;
+- gloves;
+- `WEAPON MODIFICATIONS`;
+- `IMPORT BUILD` and `EXPORT BUILD` when PD2Builder loader is available.
 
-### Weapon selection, purchase and sale
+### Loadout context menus
 
-1. Open the briefing `LOADOUT` tab.
-2. Select the primary or secondary weapon slot.
-3. Use the vanilla weapon grid to equip an owned weapon or select an empty slot to buy one.
-4. Use the available vanilla action to sell an eligible weapon.
+- Right-click the primary or secondary weapon: `OPEN INVENTORY`, `MODIFY WEAPON`, `CANCEL`.
+- Right-click the armor slot: `GLOVES`, `OUTFIT`, `ARMOR`, `CANCEL`.
 
-The last usable weapon in a category cannot be sold. Unsafe 3D preview actions are disabled only in this briefing context.
-
-### Player styles and gloves
-
-1. Open `BUILD`.
-2. Choose the vanilla player-style or glove entry.
-3. Equip an unlocked item with the standard BlackMarket action.
-4. Return to the briefing with the normal Back action.
-
-These entries reuse the briefing's vanilla `loadout` node and its `BlackMarketGui` component. Preview and customization actions are hidden in this context because their 3D scene or nested node is not available; standard equip actions remain. If Market Favorites is installed and enabled, its add/remove action, `FAV` badge and favorites-first sorting appear automatically. Briefing Enhanced does not call or require the Market Favorites namespace.
+In the briefing weapon inventory, the vanilla context menu retains weapon sale and routes weapon modification to the safe 2D component. The last usable weapon in a category cannot be sold.
 
 ### Weapon modifications
 
-1. Open `BUILD` → `WEAPON MODIFICATIONS`.
-2. Choose `PRIMARY WEAPON` or `SECONDARY WEAPON`.
-3. Select a modification category.
-4. Use the previous/next page controls when the category contains more parts than one page.
-5. Select a part to inspect its status, price, owned amount and stat preview.
-6. Confirm `INSTALL` or `REMOVE` when the action is available.
+1. Open `BUILD` → `WEAPON MODIFICATIONS`, or right-click a specific owned weapon.
+2. Select a part category and page.
+3. Select a part to inspect its state, price, description and stat preview.
+4. Confirm `INSTALL` or `REMOVE`.
 
-The interface modifies the currently equipped weapon in that category.
+`BUILD` targets the equipped weapon. The BlackMarket context action targets the exact selected inventory slot. Achievement and milestone locks are checked before confirmation and again before the transaction.
 
-## Current limitations
+## Optional integrations
 
-- No 3D weapon preview is created in the briefing.
-- Weapon skins, custom colors and the skin editor are not managed by the 2D modification component.
-- Mechanical modifications apply to the currently equipped primary or secondary weapon.
-- PD2Builder controls its own import scope; its current import does not replace weapons.
-- Final compatibility still depends on the load order and behavior of other mods that override PAYDAY 2 inventory classes.
+Optional mods are detected at runtime and are not bundled.
 
-## Compatibility and safety
+| Integration | When available | Fallback |
+|---|---|---|
+| Drag and Drop Inventory | Enables weapon move and swap behavior in briefing grids | Vanilla equip, purchase and sale |
+| More Weapon Stats | Adds its extended statistic rows | Vanilla weapon statistics |
+| PD2Builder loader | Adds build import and export entries | Entries are hidden |
+| Market Favorites | Its hooks decorate the reused weapon, outfit and glove grids automatically | Unmodified vanilla grids |
+| BeardLib | Checks ModWorkshop for newer semantic versions and installs the selected update | The mod runs normally without automatic updates |
 
-The mod preserves historical `BriefingBuildMenu` namespaces, hook IDs, localization keys and menu component IDs for upgrades from versions up to 1.6.1. New code uses the `BriefingEnhanced` namespace.
+## Limitations
 
-Briefing Enhanced limits its inventory changes to the mission briefing context and delegates economic operations to vanilla managers. Optional mods are accessed through guarded adapters.
+- No 3D weapon preview.
+- No weapon skin, custom-color or skin-editor management.
+- PD2Builder controls its own import scope and does not replace weapons.
+- Compatibility with mods that override the same PAYDAY 2 menu classes can depend on their load order and chaining behavior.
 
-If a crash occurs, include the latest files from:
+## Development
 
-```text
-PAYDAY 2/mods/logs/
-PAYDAY 2/crash.txt
-```
+The code follows one feature per folder. Runtime hooks are kept separate from controllers, game rules, rendering and optional-mod adapters.
 
-## Development and contribution
+See [the technical documentation](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md) for architecture, trigger maps, runtime flows, compatibility rules, extension tutorials and the minimum in-game test matrix.
 
-The source is organized using one feature per folder. Hooks connect game classes to controllers, services contain rules and transactions, views render UI, and adapters isolate optional mods.
+## Patch notes
 
-Read [TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md) before changing the code. It includes:
+### v1.10.0
 
-- a beginner explanation of SuperBLT loading;
-- the exact hook-to-file map;
-- module and dependency diagrams;
-- end-to-end feature flows;
-- naming conventions;
-- tutorials for adding features and integrations;
-- debugging guidance and an in-game test matrix.
+#### Added
 
-Before submitting a change:
+- Weapon purchase and sale from briefing BlackMarket grids.
+- Optional Drag and Drop Inventory integration for moving and swapping weapons.
+- Right-click menus for primary and secondary briefing weapon slots.
+- Right-click armor menu with Gloves, Outfit and Armor routes.
+- Safe modification of the exact weapon selected in the briefing BlackMarket.
+- Paginated weapon-part categories.
+- Contextual part descriptions resolved through vanilla weapon-factory data.
+- Achievement and milestone lock validation before weapon-part transactions.
+- Large right-side vanilla weapon statistics with optional More Weapon Stats rows.
+- Optional PD2Builder import and export.
+- Automatic compatibility with Market Favorites on reused vanilla grids.
+- BeardLib update checks and user-confirmed installation from the official ModWorkshop page.
 
-1. Keep LuaJIT/Lua 5.1 compatibility.
-2. Validate `mod.txt` as strict JSON.
-3. Preserve stable IDs or provide an explicit migration.
-4. Test repeated opening and closing from the briefing.
-5. Test optional integrations in both enabled and disabled states.
-6. Check the newest SuperBLT and Diesel crash logs.
+#### Improved
 
-## Credits
+- Weapon-part images now preserve their aspect ratio.
+- Weapon modification status, price, ownership and stat comparisons.
+- Outfit and glove selection through guarded vanilla loadout nodes.
+- Custom screens now hide EHI's overlapping XP panel and restore its previous visibility on close, while briefing chat remains accessible.
+- Weapon modification no longer enters the vanilla BlackMarket 3D workshop, preventing briefing crashes and reducing conflicts with inventory/workshop mods.
 
-Created by **CptTroufion**. Inspired by the idea of managing build-related screens directly from the mission briefing.
+#### Fixed
+
+- Missing weapon-part descriptions no longer display `ERROR: <localization_id>`.
+- Locked achievement parts can no longer be installed through the custom screen.
+- Closing or failing to open a custom screen no longer leaves BUILD or outfit updates blocked.
+- Unsafe briefing preview and customization actions are removed from reused grids.
+
+### v1.8.1
+
+- Added outfit selection.
+- Added menu selection.
+
+### v1.7.1
+
+- Removed legacy files.
+
+### v1.7.0
+
+- Refactored the codebase.
 
 ---
 
@@ -173,155 +155,74 @@ Created by **CptTroufion**. Inspired by the idea of managing build-related scree
 
 ## Description
 
-**Briefing Enhanced** enrichit le briefing de mission de PAYDAY 2 avec un menu central `BUILD`. Il permet de configurer les compétences, le perk deck, la tenue, les gants et les armes, de modifier l'arme équipée dans une interface 2D sûre, de consulter ses statistiques et, optionnellement, d'importer ou exporter un build avec PD2Builder sans quitter le lobby.
+**Briefing Enhanced** enrichit le briefing de mission avec un menu central `BUILD`. Il permet de gérer les compétences, le perk deck, les tenues, les gants et les armes sans quitter le lobby, puis de modifier les armes possédées dans une interface 2D sûre.
 
 ## Fonctionnalités
 
-- Bouton central `BUILD` dans le briefing.
-- Ouverture de l'arbre de compétences vanilla.
-- Ouverture de la sélection des perk decks vanilla.
-- Ouverture des écrans vanilla de tenues et de gants directement depuis `BUILD`.
-- Consultation des catégories d'armes principale et secondaire.
-- Équipement, achat et vente avec les actions BlackMarket vanilla.
-- Intégration optionnelle du glisser-déposer des armes.
-- Modification de l'arme principale ou secondaire actuellement équipée.
-- Catégories de pièces et pagination des modifications disponibles.
-- Affichage des états : équipé, disponible, incompatible, trop cher ou non possédé.
-- Installation, remplacement et retrait avec confirmations et transactions vanilla.
-- Statistiques d'armes vanilla `TOTAL / BASE / MOD / SKILL`.
-- Statistiques supplémentaires optionnelles avec More Weapon Stats.
-- Import et export optionnels avec PD2Builder.
-- Adaptations de compatibilité pour EHI et le chat du briefing.
+- Ouverture des écrans vanilla de compétences et de perk decks.
+- Sélection vanilla des tenues et des gants.
+- Menus contextuels sur les armes et l'armure du briefing.
+- Équipement, achat et vente d'armes avec les actions BlackMarket vanilla.
+- Modification de l'arme équipée ou du slot d'inventaire précisément sélectionné.
+- Catégories et pages de pièces, descriptions, prix, quantités et verrous.
+- Installation, remplacement et retrait avec les confirmations et transactions vanilla.
+- Statistiques `TOTAL / BASE / MOD / SKILL`.
+- Intégrations optionnelles avec Drag and Drop Inventory, More Weapon Stats et PD2Builder loader.
+- Mise à jour intégrée optionnelle avec BeardLib.
+- Compatibilité avec le chat du briefing, EHI et les grilles décorées par Market Favorites.
 
-## Pourquoi une interface 2D spécifique ?
+## Pourquoi une interface 2D ?
 
-L'atelier d'armes vanilla suppose que la scène 3D BlackMarket existe. Cette scène n'est pas garantie dans le briefing et peut provoquer des crashs, notamment lorsque d'autres mods d'inventaire hookent aussi l'atelier.
+L'atelier vanilla dépend de la scène 3D BlackMarket, qui n'est pas garantie dans le briefing et peut provoquer un crash lorsque `managers.menu_scene` est absent.
 
-Briefing Enhanced emploie donc une interface 2D dédiée. Elle conserve les comportements vanilla importants — pièces compatibles, quantités possédées, prix, confirmations et transactions BlackMarket — sans créer de scène de prévisualisation.
-
-## Prérequis
-
-- PAYDAY 2.
-- [SuperBLT](https://superblt.znix.xyz/).
-
-BeardLib n'est pas requis.
-
-## Intégrations optionnelles
-
-Chaque intégration est vérifiée au runtime. Une intégration absente ou désactivée n'empêche pas les fonctionnalités de base de fonctionner.
-
-| Intégration | Comportement ajouté | Repli si indisponible |
-|---|---|---|
-| Drag and Drop Inventory | Déplacement et permutation des armes dans les grilles du briefing | Équipement, achat et vente disponibles |
-| More Weapon Stats | Valeurs supplémentaires de rechargement, délais, ramassage, recul, dispersion et portée | Statistiques vanilla disponibles |
-| PD2Builder loader | Ajoute `IMPORT BUILD` et `EXPORT BUILD` dans `BUILD` | Entrées masquées |
-| Market Favorites | Ajoute les actions de favori, le badge `FAV` et le tri des favoris en tête aux grilles réutilisées du magasin, des tenues et des gants | Les grilles vanilla restent inchangées |
-
-Les mods optionnels ne sont pas inclus avec Briefing Enhanced.
+Le mod réutilise donc les données, règles de compatibilité, prix, confirmations et transactions vanilla sans ouvrir cette scène.
 
 ## Installation
 
-1. Installer SuperBLT.
-2. Télécharger ou cloner ce repository.
-3. Copier le dossier `Briefing Build Menu` dans :
-
-   ```text
-   PAYDAY 2/mods/Briefing Build Menu/
-   ```
-
-4. Vérifier que `mod.txt` se trouve directement dans ce dossier et non dans un dossier d'archive supplémentaire.
+1. Installer [SuperBLT](https://superblt.znix.xyz/).
+2. Installer [BeardLib](https://modworkshop.net/mod/14924) pour bénéficier de la vérification des mises à jour.
+3. Copier `Briefing Build Menu` dans `PAYDAY 2/mods/`.
+4. Vérifier que `mod.txt` et `main.xml` se trouvent directement dans ce dossier.
 5. Démarrer ou redémarrer PAYDAY 2.
 
-Après l'installation, SuperBLT doit afficher le mod sous le nom **Briefing Enhanced**.
+SuperBLT affiche le mod sous le nom **Briefing Enhanced**.
+
+Avec BeardLib, la page officielle [ModWorkshop](https://modworkshop.net/mod/57999) est vérifiée depuis le menu principal. Le téléchargement reste confirmé par l'utilisateur dans le gestionnaire BeardLib. Redémarrer PAYDAY 2 après l'installation.
 
 ## Utilisation
 
-### Menu BUILD
+- Ouvrir `BUILD` pour accéder aux compétences, perk decks, tenues, gants, modifications d'armes et, si disponible, PD2Builder.
+- Faire un clic droit sur l'arme principale ou secondaire du briefing pour ouvrir son inventaire ou la modifier.
+- Faire un clic droit sur l'armure pour ouvrir Gants, Tenue ou Armure.
+- Dans l'inventaire d'armes du briefing, employer les actions vanilla pour équiper, acheter ou vendre, et l'action de modification pour ouvrir le composant 2D.
 
-1. Héberger ou rejoindre une partie et atteindre le briefing.
-2. Sélectionner `BUILD`.
-3. Choisir une action disponible :
+L'entrée `BUILD` cible l'arme équipée. Le menu BlackMarket cible le slot possédé sélectionné. Les verrous de succès et de milestone sont revérifiés avant toute transaction.
 
-   - `SKILL TREE` ;
-   - sélection du perk deck ;
-   - tenues ;
-   - gants ;
-   - `WEAPON MODIFICATIONS` ;
-   - `IMPORT BUILD` ou `EXPORT BUILD` si PD2Builder loader est disponible.
+## Intégrations optionnelles
 
-### Sélection, achat et vente d'armes
+| Intégration | Si disponible | Repli |
+|---|---|---|
+| Drag and Drop Inventory | Déplacement et permutation des armes | Équipement, achat et vente vanilla |
+| More Weapon Stats | Lignes de statistiques étendues | Statistiques vanilla |
+| PD2Builder loader | Import et export de build | Entrées masquées |
+| Market Favorites | Décoration automatique des grilles vanilla réutilisées | Grilles vanilla inchangées |
+| BeardLib | Vérification des versions sémantiques et installation depuis ModWorkshop | Le mod fonctionne normalement sans mise à jour automatique |
 
-1. Ouvrir l'onglet `LOADOUT` du briefing.
-2. Sélectionner l'emplacement d'arme principale ou secondaire.
-3. Employer la grille vanilla pour équiper une arme possédée ou sélectionner un emplacement vide afin d'en acheter une.
-4. Employer l'action vanilla disponible pour vendre une arme éligible.
+## Limites
 
-La dernière arme utilisable d'une catégorie ne peut pas être vendue. Les actions de prévisualisation 3D dangereuses sont désactivées uniquement dans ce contexte de briefing.
+- Aucune prévisualisation 3D des armes.
+- Aucun traitement des skins, couleurs personnalisées ou de l'éditeur de skins.
+- PD2Builder contrôle son propre périmètre d'import et ne remplace pas les armes.
+- Les mods qui remplacent les mêmes classes de menu peuvent rester sensibles à l'ordre de chargement.
 
-### Tenues et gants
+## Développement
 
-1. Ouvrir `BUILD`.
-2. Choisir l'entrée vanilla des tenues ou des gants.
-3. Équiper un élément déverrouillé avec l'action BlackMarket standard.
-4. Revenir au briefing avec l'action Retour normale.
+Le code suit le principe « une fonctionnalité, un dossier ». Consulter [la documentation technique](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md) pour l'architecture, les déclencheurs, les flux runtime, la compatibilité, les tutoriels d'évolution et la matrice minimale de tests en jeu.
 
-Ces entrées réutilisent le nœud vanilla `loadout` du briefing et son composant `BlackMarketGui`. Les actions de prévisualisation et de personnalisation sont masquées dans ce contexte, car leur scène 3D ou leur nœud imbriqué n'est pas disponible ; les actions d'équipement standard restent présentes. Si Market Favorites est installé et activé, son action d'ajout/retrait, son badge `FAV` et son tri des favoris en tête apparaissent automatiquement. Briefing Enhanced n'appelle pas le namespace de Market Favorites et ne le requiert pas.
+## Notes de version
 
-### Modifications d'armes
+La liste détaillée de la version **1.10.0** se trouve dans la section anglaise [Patch notes](#patch-notes). Les entrées historiques 1.8.1, 1.7.1 et 1.7.0 y sont également conservées.
 
-1. Ouvrir `BUILD` → `WEAPON MODIFICATIONS`.
-2. Choisir `PRIMARY WEAPON` ou `SECONDARY WEAPON`.
-3. Sélectionner une catégorie de modification.
-4. Employer les boutons page précédente/suivante si la catégorie contient plusieurs pages.
-5. Sélectionner une pièce pour consulter son état, son prix, la quantité possédée et l'aperçu des statistiques.
-6. Confirmer `INSTALL` ou `REMOVE` si l'action est disponible.
+## Credits
 
-L'interface modifie l'arme actuellement équipée dans la catégorie choisie.
-
-## Limites actuelles
-
-- Aucune prévisualisation 3D de l'arme n'est créée dans le briefing.
-- Les skins, couleurs personnalisées et l'éditeur de skins ne sont pas gérés par le composant 2D.
-- Les modifications mécaniques concernent l'arme principale ou secondaire actuellement équipée.
-- PD2Builder contrôle la portée de son import ; son import actuel ne remplace pas les armes.
-- La compatibilité finale dépend toujours de l'ordre de chargement et du comportement des autres mods qui remplacent des classes d'inventaire PAYDAY 2.
-
-## Compatibilité et sécurité
-
-Le mod conserve les anciens namespaces `BriefingBuildMenu`, IDs de hooks, clés de localisation et IDs de composants pour les mises à jour depuis les versions allant jusqu'à 1.6.1. Le nouveau code utilise le namespace `BriefingEnhanced`.
-
-Briefing Enhanced limite ses modifications d'inventaire au briefing et délègue les opérations économiques aux managers vanilla. Les mods optionnels sont appelés derrière des adaptateurs protégés.
-
-En cas de crash, joindre les derniers fichiers présents dans :
-
-```text
-PAYDAY 2/mods/logs/
-PAYDAY 2/crash.txt
-```
-
-## Développement et contribution
-
-Le code suit la règle « une fonctionnalité, un dossier ». Les hooks raccordent les classes du jeu, les contrôleurs coordonnent les parcours, les services contiennent les règles et transactions, les vues dessinent l'interface et les adaptateurs isolent les mods optionnels.
-
-Lire [TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md) avant de modifier le code. Ce document contient :
-
-- une explication du chargement SuperBLT pour débuter ;
-- la carte exacte des hooks et fichiers ;
-- les schémas des modules et dépendances ;
-- les parcours fonctionnels de bout en bout ;
-- les conventions de nommage ;
-- des tutoriels d'ajout de fonctionnalités et d'intégrations ;
-- une aide au diagnostic et une matrice de tests en jeu.
-
-Avant de proposer une modification :
-
-1. Conserver la compatibilité LuaJIT/Lua 5.1.
-2. Valider `mod.txt` comme JSON strict.
-3. Préserver les IDs stables ou fournir une migration explicite.
-4. Tester les ouvertures et fermetures répétées depuis le briefing.
-5. Tester les intégrations optionnelles activées puis désactivées.
-6. Vérifier les derniers logs SuperBLT et Diesel.
-
-## Crédits
-
-Créé par **CptTroufion**. Inspiré par l'idée de gérer les écrans liés au build directement depuis le briefing de mission.
+Créé par **CptTroufion**.

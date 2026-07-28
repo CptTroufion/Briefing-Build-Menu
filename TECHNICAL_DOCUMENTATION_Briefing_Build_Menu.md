@@ -1,105 +1,72 @@
 # Briefing Enhanced — Technical Documentation
 
-Version documented: **1.8.1**  
-Runtime: **PAYDAY 2 / SuperBLT / LuaJIT (Lua 5.1)**
+Reference for **Briefing Enhanced 1.10.0**, targeting PAYDAY 2, SuperBLT and LuaJIT/Lua 5.1.
 
-- [English](#english)
-- [Français](#français)
+- [English reference](#english-reference)
+- [Référence française](#référence-française)
 
 ---
 
-# English
+# English reference
 
-## 1. Purpose
+## 1. Technical scope
 
-Briefing Enhanced adds a `BUILD` entry to the mission briefing. It lets the player manage the current build without leaving the briefing:
+Briefing Enhanced extends `kit_menu` without creating the BlackMarket 3D scene. It delegates data, unlock rules, prices, confirmations and mutations to PAYDAY 2 managers, while custom code coordinates briefing-only navigation and renders the weapon modification UI.
 
-- skill tree and perk deck;
-- player styles and gloves through the vanilla briefing BlackMarket flow;
-- primary and secondary weapon selection;
-- weapon purchase, sale and optional drag-and-drop;
-- mechanical weapon modifications through a safe 2D interface;
-- vanilla weapon statistics and optional More Weapon Stats values;
-- optional PD2Builder import and export.
+Runtime invariants:
 
-The mod reuses vanilla menus and transactions whenever they are safe in `kit_menu`. It does not open the vanilla 3D weapon workshop from the briefing because `managers.menu_scene` is not guaranteed to exist there.
+- `BriefingEnhanced` is the canonical namespace.
+- `BriefingBuildMenu` remains an alias to the same table.
+- Feature state must be scoped to the active `kit_menu`.
+- Custom screen initialization and cleanup must be idempotent.
+- Optional integrations must have a complete vanilla fallback.
+- All code must remain LuaJIT/Lua 5.1 compatible.
 
-Recommended learning path for a new modder:
+## 2. Design principles
 
-1. Read sections 2 and 3 to understand SuperBLT vocabulary.
-2. Follow section 8 from a game `hook_id` to the loaded files.
-3. Read section 10 before changing any screen opening or closing code.
-4. Use the recipes in section 13 for actual changes.
-5. Finish with the test matrix in section 14.
+- **One feature per folder:** a feature owns its hooks, controller, rules and UI.
+- **KISS:** use vanilla nodes and callbacks where they are safe; use custom UI only where briefing constraints require it.
+- **Single responsibility:** hooks connect runtime classes, controllers coordinate flows, services own rules, views render, adapters isolate external APIs.
+- **Dependency inversion:** feature code calls an adapter contract, never an optional mod directly.
+- **Fail closed:** a missing manager, node, class, unlock result or dependency disables the action instead of guessing.
+- **Idempotence:** namespaces, hook installation and component registration use stable guards.
+- **Scoped mutation:** BlackMarket changes apply only while the briefing inventory context is active.
+- **Vanilla authority:** economic operations, inventory mutations and outfit refreshes remain owned by PAYDAY 2 managers.
+- **Compatibility before visual fidelity:** the weapon editor is 2D because `managers.menu_scene` is not guaranteed in `kit_menu`.
 
-## 2. Beginner mental model: how a PAYDAY 2 mod runs
+## 3. Architecture element types
 
-PAYDAY 2 does not execute every Lua file in a mod at startup. SuperBLT first reads `mod.txt`. Each `hooks` entry tells SuperBLT: **when PAYDAY 2 loads this game script, execute this mod entry file too**.
+| Type | Responsibility | Must not contain |
+|---|---|---|
+| `hook_*` | Load modules at a SuperBLT `hook_id`; attach guarded hooks to game classes | Business rules or large UI construction |
+| `Controller*` | Validate context and coordinate an end-to-end user action | Raw optional-mod calls |
+| `Service*` | Query managers, enforce rules and perform transactions | Input-hook installation |
+| `State*` | Own a bounded runtime lifecycle and restore prior state | Rendering |
+| `Factory*` | Create or register nodes/components idempotently | Feature transactions |
+| `Component*` | Own interactive custom-screen state and input behavior | PAYDAY 2 unlock/economic policy |
+| `View*` | Create, update and destroy panels/textures | Navigation or transactions |
+| `Presenter*` | Transform domain data into display-ready values | Game mutations |
+| `Adapter*` | Detect and wrap an optional or conflicting mod API | Core feature policy |
+| `Facade*` | Preserve legacy public names by delegation | New behavior |
+| `localization_*` | Register display strings | Runtime rules |
 
-There are therefore two different loading levels:
+Dependency direction:
 
 ```text
-PAYDAY 2 loads a game script
-  → SuperBLT finds the matching hook_id in mod.txt
-  → SuperBLT executes the declared hook_*.lua entry file
-  → the entry file loads its own modules with dofile(...)
-  → the entry file registers PreHook/PostHook/OverrideFunction callbacks
-  → the callback runs later when the hooked game method is called
+SuperBLT hook -> Controller -> Service / State / Factory
+                              -> Presenter -> Adapter
+Component -> View
 ```
 
-Example for the `BUILD` button:
+Hooks may compose modules, but lower-level modules must not depend on hook files.
 
-```text
-Game loads lib/managers/menu/missionbriefinggui
-  → mod.txt executes lua/briefing_menu/hook_mission_briefing.lua
-  → that file loads FactoryBriefingNode, controllers and ViewBriefingButton
-  → it registers a PostHook on MissionBriefingGui:init
-  → PAYDAY 2 creates the briefing UI and calls init
-  → the PostHook creates the BUILD button
-```
-
-This distinction is essential when debugging:
-
-- a crash at the top of a `hook_*.lua` file is a **loading or dependency problem**;
-- a crash inside a hook callback is a **runtime lifecycle problem**;
-- a button that appears but does nothing is usually an **input, node or controller problem**;
-- an action that opens the correct UI but changes nothing is usually a **service or game transaction problem**.
-
-## 3. Beginner glossary
-
-| Term | Simple meaning in this mod |
-|---|---|
-| `mod.txt` | Manifest read by SuperBLT; it declares the mod and its game-script entry points |
-| `hook_id` | Path of the PAYDAY 2 game script that triggers a mod entry file |
-| `RequiredScript` | Runtime value containing the current game script path; used when one entry file handles several contexts |
-| `dofile(path)` | Executes another Lua file; used here to compose internal modules |
-| `Hooks:PreHook` | Runs mod code before the original game method |
-| `Hooks:PostHook` | Runs mod code after the original game method |
-| `Hooks:OverrideFunction` | Wraps/replaces a method; use only when its return value or input handling must change |
-| `manager` | Long-lived PAYDAY 2 service available through `managers`, such as `managers.menu` or `managers.blackmarket` |
-| menu `node` | Description of a menu screen and the component it must create |
-| menu `component` | Runtime UI object that owns panels, input and close behavior |
-| `panel` / `workspace` | Diesel UI containers used to draw text, rectangles and bitmaps |
-| `blueprint` | List of part IDs currently assembled on a crafted weapon |
-| `global_value` | Economic/source variant of an item; it must travel with a weapon part transaction |
-| idempotent | Safe to load or install more than once without duplicating hooks or state |
-| facade | Compatibility method that forwards an old API to the new implementation |
-
-## 4. Design principles
-
-- **One feature, one folder:** files that change together stay together.
-- **KISS:** hook files connect PAYDAY 2 to the feature; business rules remain in small named modules.
-- **Single responsibility:** views render, controllers coordinate, services apply rules, adapters isolate optional mods.
-- **Vanilla first:** purchases, sales, equipment and part transactions use PAYDAY 2 managers and confirmations.
-- **Defensive runtime access:** lifecycle-sensitive objects such as `managers.*`, panels and optional mod globals are checked before use.
-- **Idempotent loading:** namespaces and hook installation flags prevent duplicate installation.
-- **Backward compatibility:** historical IDs and public entry points remain available through aliases and facades.
-
-## 5. Directory architecture
+## 4. Folder architecture
 
 ```text
 Briefing Build Menu/
 ├── mod.txt
+├── main.xml
+├── README.md
 ├── TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md
 └── lua/
     ├── core/
@@ -108,936 +75,1395 @@ Briefing Build Menu/
     ├── perk_deck/
     ├── outfit/
     ├── weapon_inventory/
+    ├── weapon_context_menu/
     ├── weapon_modification/
     ├── build_transfer/
     ├── compatibility/
     └── localization/
 ```
 
-| Folder | Responsibility |
+| Path | Ownership |
 |---|---|
-| `core/` | Namespace, constants, session state, navigation, dialogs, outfit synchronization and legacy facade |
-| `briefing_menu/` | `BUILD` button, context menu and `kit_menu` node creation |
-| `skill_tree/` | Skill tree opening, input restriction and close cleanup |
-| `perk_deck/` | Perk deck opening and close cleanup |
-| `outfit/` | Builds the vanilla loadout tabs, opens them and removes unsafe outfit actions |
-| `weapon_inventory/` | Weapon selection, purchase, sale and Drag and Drop Inventory integration |
-| `weapon_modification/` | Part discovery, transactions, 2D component, rendering and statistics |
-| `build_transfer/` | Optional PD2Builder loader integration |
-| `compatibility/` | EHI and chat adapters |
-| `localization/` | English localization strings |
-
-## 6. Component types and naming convention
-
-Names descend from the broad technical role to the feature or nature:
-
-| Prefix | Role | Example |
-|---|---|---|
-| `Hook` | Connects a PAYDAY 2 class or custom event to the mod | `HookMissionBriefing` |
-| `Controller` | Coordinates a user flow | `ControllerWeaponModification` |
-| `Service` | Contains reusable rules or mutations | `ServiceWeaponInventory` |
-| `Adapter` | Isolates an external or optional mod API | `AdapterMoreWeaponStats` |
-| `Component` | Owns UI lifecycle, state and input | `ComponentWeaponModification` |
-| `View` | Creates or renders visual elements | `ViewBriefingButton` |
-| `Presenter` | Converts game data into display-ready values | `PresenterWeaponStatistics` |
-| `State` | Owns explicit runtime state | `StateBriefingSession` |
-| `Factory` | Creates and registers objects | `FactoryBriefingNode` |
-| `Constants` | Stores stable identifiers and layout constants | `ConstantsBriefingEnhanced` |
-
-File names use lowercase `snake_case` and start with the component type, for example `service_weapon_modification.lua`.
-
-Methods use short action names inside their typed table:
-
-```lua
-BriefingEnhanced.ControllerPerkDeck:open()
-BriefingEnhanced.ServiceWeaponModification:install(category, part_type, part)
-```
-
-Repeating the file or component name in every method is avoided because the owning table already provides that context. Local helpers use explicit verb phrases such as `build_part_data` or `configure_locked_slot`.
-
-Stable identifiers keep their historical `BriefingBuildMenu_*`, `bbm_*` or `briefing_build_menu_*` names. They must not be renamed without a migration because SuperBLT hooks, menu nodes, localization and third-party wrappers may depend on them.
-
-## 7. Namespace and internal loading
-
-`mod.txt` declares each PAYDAY 2 `hook_id` and its entry script. An entry script is loaded only when the corresponding game class is available.
-
-Every feature entry loads `lua/core/bootstrap.lua`. The bootstrap:
-
-1. creates the canonical `BriefingEnhanced` table;
-2. aliases `BriefingBuildMenu` to the same table;
-3. captures `ModPath` once;
-4. loads the core modules once through `_core_loaded`.
-
-Feature hooks then load only their required service, controller, adapter, presenter, component or view files. Hook tables contain installation flags so loading the same routed script in multiple game contexts does not register a hook twice.
-
-## 8. Exact trigger and file map
-
-Start here when you need to know why a file is loaded. The left column is the PAYDAY 2 script. The middle column is the file SuperBLT executes from `mod.txt`.
-
-| PAYDAY 2 trigger (`hook_id`) | Mod entry file | What the entry file loads or installs |
-|---|---|---|
-| `lib/managers/menu/menucomponentmanager` | `weapon_modification/hook_menu_component.lua` | Loads core and adds create/close methods to `MenuComponentManager` |
-| `lib/managers/menu/missionbriefinggui` | `core/hook_bootstrap.lua` | Initializes the shared namespace and core services first |
-| `lib/managers/menu/missionbriefinggui` | `weapon_inventory/hook_weapon_inventory.lua` | Loads the inventory service/adapter and hooks `NewLoadoutTab` or `LoadoutItem` |
-| `lib/managers/menu/playerinventorygui` | `weapon_inventory/hook_weapon_inventory.lua` | The same entry detects `RequiredScript` and hooks `PlayerInventoryGui` |
-| `lib/managers/menu/blackmarketgui` | `weapon_inventory/hook_weapon_inventory.lua` | The same entry hooks BlackMarket population and sale completion |
-| `lib/managers/menu/blackmarketgui` | `outfit/hook_outfit.lua` | Removes preview/customization actions only from marked briefing outfit tabs |
-| `lib/managers/menu/missionbriefinggui` | `weapon_modification/hook_weapon_modification.lua` | Loads modification service, controller, stats adapter/presenter, component and view |
-| `lib/managers/menu/missionbriefinggui` | `build_transfer/hook_build_transfer.lua` | Loads the PD2Builder adapter |
-| `lib/managers/menu/missionbriefinggui` | `compatibility/hook_ehi.lua` | Loads the EHI adapter; actual installation waits for the EHI method |
-| `lib/managers/menu/missionbriefinggui` | `briefing_menu/hook_mission_briefing.lua` | Loads briefing modules, outfit controller and hooks init/hide/close/mouse methods |
-| `lib/managers/menu/skilltreeguinew` | `skill_tree/hook_skill_tree.lua` | Loads the skill controller and hooks legends, special input and close |
-| `lib/managers/menu/specializationguinew` | `perk_deck/hook_perk_deck.lua` | Loads the perk controller and hooks close |
-| `lib/managers/chatmanager` | `compatibility/hook_chat.lua` | Loads the chat adapter and registers its later menu initialization callback |
-| `lib/managers/localizationmanager` | `localization/localization_english.lua` | Registers every `bbm_*` display string |
-
-The order of the `missionbriefinggui` entries is intentional: core and feature classes are loaded before `hook_mission_briefing.lua` creates the button that can call them.
-
-### Internal load chain by feature
-
-```text
-BUILD menu
-hook_mission_briefing
-  ├─ factory_briefing_node
-  ├─ controller_briefing_menu
-  ├─ view_briefing_button
-  ├─ controller_skill_tree
-  ├─ controller_outfit
-  └─ controller_perk_deck
-
-Weapon inventory
-hook_weapon_inventory
-  ├─ adapter_drag_drop_inventory
-  └─ service_weapon_inventory
-
-Weapon modification
-hook_weapon_modification
-  ├─ service_weapon_modification
-  ├─ controller_weapon_modification
-  ├─ adapter_more_weapon_stats
-  ├─ presenter_weapon_statistics
-  ├─ component_weapon_modification
-  └─ view_weapon_modification
-
-Every chain above
-  └─ core/bootstrap
-       ├─ constants_briefing_enhanced
-       ├─ service_outfit
-       ├─ service_dialog
-       ├─ state_briefing_session
-       ├─ controller_menu_navigation
-       └─ facade_legacy
-```
-
-## 9. Dependencies
-
-### Required dependencies
-
-| Dependency | Why it is required |
-|---|---|
-| PAYDAY 2 | Provides the menu, BlackMarket, weapon factory and UI classes |
-| SuperBLT | Reads `mod.txt`, provides `Hooks`, `QuickMenu` and the mod runtime |
-| LuaJIT / Lua 5.1 syntax | PAYDAY 2's Lua runtime; Lua 5.2+ syntax is invalid |
-
-BeardLib is **not** required by the current architecture.
-
-### Optional integrations
-
-| Optional mod/API | Detection | Feature enabled | Safe fallback |
-|---|---|---|---|
-| Drag and Drop Inventory | Enabled BLT mod plus `DragDropInventory` and required manager methods | Move/swap actions in weapon grids | Normal equip, purchase and sale remain |
-| More Weapon Stats | Enabled BLT mod plus initialized `MoreWeaponStats` and `Faker` APIs | Extra statistic rows | Vanilla statistics remain |
-| PD2Builder loader | Enabled BLT mod plus `BuilderLoader.load_build` and `upload_build` | Import/Export entries | Entries are hidden |
-| Market Favorites | Its independent `BlackMarketGui` hooks are active | Favorite actions, `FAV` badges and sorting in reused weapon, player-style and glove grids | Vanilla BlackMarket grids |
-| EHI | Runtime presence of `MissionBriefingGui.AddXPBreakdown` | Hides/restores EHI briefing elements | No EHI-specific action |
-| Chat translator API | Runtime presence of `ChatTranslatorMessage` | Translation request for received messages | Normal chat remains |
-
-An adapter must treat a missing optional dependency as a normal state, never as an error. Do not call an optional mod global directly from a controller, service or view.
-
-### Dependency direction rule
-
-Dependencies should flow in one direction:
-
-```text
-PAYDAY 2 hook → Controller → Service → PAYDAY 2 manager
-                         ↘ Presenter → View
-Optional mod hook/API → Adapter ───────↗
-```
-
-A service must not know how a button is drawn. A view must not directly buy, sell or install an item. This separation makes it possible to change one layer without rewriting the others.
-
-## 10. Briefing session lifecycle
-
-`StateBriefingSession` is the shared lifecycle boundary for custom nodes and build editors opened from the briefing.
-
-```text
-User selects an option
-  → ControllerMenuNavigation:open
-  → StateBriefingSession:begin
-  → save previous outfit-block value
-  → open the kit_menu node
-  → user changes the build
-  → vanilla/custom component closes
-  → StateBriefingSession:finish
-  → restore previous block value
-  → refresh outfit information
-```
-
-While a screen is open, `Global.block_update_outfit_information` prevents the briefing from updating an incomplete intermediate loadout. Its previous value is stored and restored exactly. Opening failures reset the session immediately. A legacy `opened_from_briefing` value can also be adopted during a SuperBLT reload.
-
-The player-style and glove entries are an intentional exception. The briefing owns a `MissionBriefingGui` and `NewLoadoutTab`, not a `PlayerInventoryGui`. `ControllerOutfit` opens the existing vanilla `loadout` node in `kit_menu`, so its transition and Back navigation remain authoritative. Starting a second `StateBriefingSession` around that flow would duplicate its lifecycle and could block outfit publication.
-
-## 11. Feature flows
-
-### 11.1 BUILD button
-
-1. `MissionBriefingGui:init` is post-hooked.
-2. `FactoryBriefingNode:ensure_all()` registers the mod nodes in the active `kit_menu`.
-3. `ViewBriefingButton:create()` removes the replaced legacy button and creates `BUILD`.
-4. The mouse overrides consume input only when the pointer is on this button.
-5. `ControllerBriefingMenu:show()` opens a `QuickMenu` containing available features.
-
-Files traversed: `hook_mission_briefing.lua` → `factory_briefing_node.lua` / `view_briefing_button.lua` → `controller_briefing_menu.lua`.
-
-### 11.2 Skill tree and perk deck
-
-The controllers ensure the nodes exist, begin a briefing session and open the vanilla menu components:
-
-- `skilltree_new` creates `NewSkillTreeGui`;
-- `skilltree` creates `SpecializationGuiNew` in the current game version.
-
-The skill-set switch is disabled only when the skill tree was opened from the briefing. Closing either screen ends the matching session and synchronizes the current outfit.
-
-Skill tree call chain:
-
-```text
-ControllerBriefingMenu option
-  → ControllerSkillTree:open                         (controller_skill_tree.lua)
-  → FactoryBriefingNode:ensure_all                   (factory_briefing_node.lua)
-  → ControllerMenuNavigation:open("skilltree", ...)  (controller_menu_navigation.lua)
-  → managers.menu:open_node
-  → NewSkillTreeGui
-  → close PostHook                                   (hook_skill_tree.lua)
-  → StateBriefingSession:finish
-```
-
-The perk deck follows the same chain through `controller_perk_deck.lua`, `SpecializationGuiNew` and `hook_perk_deck.lua`.
-
-### 11.3 Player styles and gloves
-
-`ControllerBriefingMenu` exposes separate player-style and glove entries using the game's localized labels. `ServiceOutfitMenu` creates two standard BlackMarket tab definitions using `populate_player_styles` and `populate_gloves`; `ControllerOutfit` selects tab 1 or 2 and opens the existing `loadout` node.
-
-The reused `BlackMarketGui` retains vanilla cell population and equip callbacks. The marked context removes `trd_preview`, `trd_customize`, `hnd_preview` and BeardLib's `hnd_customize`, because those actions require the unavailable 3D preview path or an outfit customization node outside `kit_menu`. Equip, DLC and favorite actions remain available.
-
-Market Favorites integration is passive and optional. When installed, its existing hooks on `populate_player_styles` and `populate_gloves` decorate these reused grids automatically. Briefing Enhanced neither detects Market Favorites nor calls its namespace, so either mod remains usable alone.
-
-### 11.4 Weapon selection, purchase and sale
-
-The inventory feature is enabled only when the active menu is `kit_menu` and the internal context targets `primaries` or `secondaries`.
-
-1. `PlayerInventoryGui`, `NewLoadoutTab` or legacy `LoadoutItem` identifies the selected category.
-2. `ServiceWeaponInventory` enables the appropriate vanilla actions.
-3. Empty unlocked slots receive `ew_buy`; locked slots receive `ew_unlock` when affordable.
-4. Owned weapons receive equip and sale actions while protecting the last usable weapon.
-5. `BlackMarketGui` keeps vanilla lists, prices, DLC locks and confirmations.
-6. Unsafe 3D preview actions are removed in this briefing-only context.
-7. After a sale, outfit information is synchronized.
-
-The same `hook_weapon_inventory.lua` is deliberately registered for three game scripts. `RequiredScript` selects only the matching branch: briefing/loadout creation, `PlayerInventoryGui` category selection, or `BlackMarketGui` action population. All action rules are centralized in `service_weapon_inventory.lua`; the hook should only collect context and pass game data to that service.
-
-### 11.5 Drag and Drop Inventory
-
-`AdapterDragDropInventory` exposes the integration only when the dependency is installed, enabled and all required APIs exist. The mod then lets the dependency perform pickup, placement and profile-safe swaps. Briefing Enhanced does not duplicate its permutation logic. Without the dependency, purchase and sale remain available.
-
-The adapter is loaded by `hook_weapon_inventory.lua`. `ServiceWeaponInventory` asks `AdapterDragDropInventory:is_available()` while building actions. When available, the hook removes the loadout-only marker from the briefing weapon node so the dependency's existing handlers can process the grid.
-
-### 11.6 Weapon modifications
-
-Weapon modifications use a dedicated 2D component registered on `MenuComponentManager`.
-
-1. The user chooses the equipped primary or secondary weapon.
-2. `ControllerWeaponModification` opens the custom `kit_menu` node.
-3. `ServiceWeaponModification` reads the equipped crafted weapon and calls `get_dropable_mods_by_weapon_id` once per refresh.
-4. It groups compatible parts by type and preserves each part's `global_value`, inventory amount, price, conflict, default and cosmetic state.
-5. `ComponentWeaponModification` owns selection, tabs, pages, mouse/controller input and refreshes.
-6. `View` methods render the grid, part details and statistics without a 3D preview.
-7. Installation or removal uses the vanilla confirmation and BlackMarket transaction methods.
-8. The blueprint is read again after the mutation. A failed or rejected change displays an error instead of assuming success.
-9. The outfit and UI are refreshed.
-
-UI creation has two separate entry moments. `hook_menu_component.lua` runs when `MenuComponentManager` exists and declares the create/close callbacks. Later, `hook_weapon_modification.lua` runs with the briefing and loads the actual component class. `FactoryBriefingNode` connects both using the stable component ID. This split prevents callbacks from referencing a manager method that has not been declared yet.
-
-The component is registered under the historical `bbm_weapon_modifications` ID. Legacy manager methods and the `BriefingWeaponModificationsGui` global remain aliases for compatibility.
-
-### 11.7 Weapon statistics
-
-`PresenterWeaponStatistics` builds preview data without changing the real blueprint. Vanilla `TOTAL / BASE / MOD / SKILL` values come from `WeaponDescription._get_stats`.
-
-`AdapterMoreWeaponStats` is used only if More Weapon Stats is installed, enabled and fully initialized. Its optional rows are calculated through its `Faker` API. If any required API is unavailable, the UI remains functional with vanilla statistics only.
-
-Data path: selected part in `ComponentWeaponModification` → `PresenterWeaponStatistics:get_data()` → vanilla `WeaponDescription._get_stats` plus optional `AdapterMoreWeaponStats:get_rows()` → rendering in `view_weapon_modification.lua`.
-
-### 11.8 PD2Builder
-
-`AdapterPd2Builder` checks that **PD2Builder loader** is enabled and that `BuilderLoader` exposes the expected methods. Import and Export appear in the `BUILD` menu only when those checks pass. A post-hook on `BuilderLoader:set_build` refreshes outfit information after an import.
-
-`hook_build_transfer.lua` only loads the adapter. `ControllerBriefingMenu` performs the availability check when building the QuickMenu, so enabling/disabling the dependency changes whether the entries are displayed without duplicating the menu logic.
-
-### 11.9 EHI and chat
-
-- `AdapterEhi` detects EHI's late-added XP breakdown method, surrounds it with pre/post hooks and temporarily hides the captured elements while a build screen is open.
-- `AdapterChat` preserves access to chat inside the custom flow and optionally requests translation when the relevant translator API exists.
-
-Both adapters are optional and idempotent.
-
-## 12. Compatibility policy
-
-The displayed name is **Briefing Enhanced**, but the physical folder remains `Briefing Build Menu` to avoid breaking existing installations.
-
-The following compatibility surfaces are intentionally retained:
-
-- `BriefingBuildMenu` namespace alias;
-- historical hook IDs and localization keys;
-- historical node and component IDs;
-- methods marked `Compatibility facade`;
+| `mod.txt` | SuperBLT identity, version and game-script hooks |
+| `main.xml` | BeardLib `AssetUpdates` declaration for the official ModWorkshop release |
+| `core/` | Bootstrap, constants, session state, navigation, dialogs, outfit synchronization and legacy facade |
+| `briefing_menu/` | BUILD button, QuickMenu options and custom `kit_menu` node registration |
+| `skill_tree/` | Vanilla skill-tree opening, briefing restrictions and close cleanup |
+| `perk_deck/` | Vanilla specialization opening and close cleanup |
+| `outfit/` | Guarded reuse of the vanilla loadout node for player styles and gloves |
+| `weapon_inventory/` | Briefing inventory context, equip/buy/sell actions and Drag and Drop Inventory adapter |
+| `weapon_context_menu/` | Right-click routing for briefing weapon/armor slots and BlackMarket modification |
+| `weapon_modification/` | Weapon/part rules, transactions, custom component, rendering, statistics and More Weapon Stats adapter |
+| `build_transfer/` | PD2Builder detection and import/export bridge |
+| `compatibility/` | EHI and chat lifecycle adaptations |
+| `localization/` | English localization keys |
+
+`bootstrap.lua` loads only shared core modules. Each hook entry loads its feature modules when the target PAYDAY 2 class exists.
+
+## 5. Naming conventions
+
+### Files and tables
+
+- File: `<type>_<feature>.lua`, for example `service_weapon_modification.lua`.
+- Table/class: `[Type][Nature][Qualifier]`, for example `ServiceWeaponModification`.
+- Hook state: `BE.HookFeature = BE.HookFeature or {}` with per-runtime guards.
+- Constants: uppercase snake case inside `ConstantsBriefingEnhanced`.
+
+### Methods and locals
+
+- A typed table uses a short verb: `open`, `refresh`, `install`, `remove`, `is_available`.
+- Boolean methods start with `is_`, `has_`, `can_` or `should_`.
+- Deferred callbacks requiring several values use Lua closures, not multi-argument `callback(...)`.
+- Use PAYDAY 2 category names (`primaries`, `secondaries`) at manager boundaries.
+
+### Stable identifiers
+
+Keep the historical `bbm_*` localization IDs, node/component names and `BriefingBuildMenu_*` hook IDs. Do not rename:
+
+- `BriefingBuildMenu`;
+- compatibility facade methods;
 - `BriefingWeaponModificationsGui`;
-- `create_bbm_weapon_modifications` and `close_bbm_weapon_modifications`.
+- `create_bbm_*` / `close_bbm_*`;
+- existing node and component IDs.
 
-New code should use `BriefingEnhanced` and the typed modules. Compatibility facades should contain delegation only, not new business logic.
+They support upgrades, partial SuperBLT reloads and third-party wrappers.
 
-## 13. How to evolve the mod
+## 6. Trigger and file map
 
-### 13.1 Find the correct starting file
+`mod.txt` is the authoritative external load map.
 
-| Desired change | Start reading here | Usually also change |
+| PAYDAY 2 trigger | Entry file | Purpose |
 |---|---|---|
-| Add or reorder a BUILD option | `briefing_menu/controller_briefing_menu.lua` | Localization and possibly a new controller |
-| Change BUILD button appearance/position | `briefing_menu/view_briefing_button.lua` | Shared constants if the value is reused |
-| Add a menu node | `briefing_menu/factory_briefing_node.lua` | Controller that opens it and component create/close methods |
-| Change open/close behavior | `core/state_briefing_session.lua` and `controller_menu_navigation.lua` | Matching feature close hook |
-| Change weapon purchase/sale rules | `weapon_inventory/service_weapon_inventory.lua` | Its routed hook only if another game method is required |
-| Change part availability or transactions | `weapon_modification/service_weapon_modification.lua` | Controller/component only if the interaction changes |
-| Change modification screen layout | `weapon_modification/view_weapon_modification.lua` | Component for new input/state |
-| Add a displayed statistic | `weapon_modification/presenter_weapon_statistics.lua` | View columns/rows or optional adapter |
-| Integrate another mod | A new `adapter_<mod>.lua` in the owning feature | Entry hook and availability check |
-| Add displayed text | `localization/localization_english.lua` | Use a new stable `bbm_*` key in the consumer |
+| `menucomponentmanager` | `weapon_modification/hook_menu_component.lua` | Declare create/close methods for the custom component |
+| `missionbriefinggui` | `core/hook_bootstrap.lua` | Initialize the shared namespace/core |
+| `missionbriefinggui` | `briefing_menu/hook_mission_briefing.lua` | Register nodes, create BUILD, route mouse input and clean session state |
+| `missionbriefinggui` | `weapon_inventory/hook_weapon_inventory.lua` | Mark briefing weapon-category flows and configure cells |
+| `playerinventorygui` | `weapon_inventory/hook_weapon_inventory.lua` | Track the alternate vanilla inventory entry path |
+| `blackmarketgui` | `weapon_inventory/hook_weapon_inventory.lua` | Enable safe buy/sell/modify actions in marked briefing grids |
+| `blackmarketgui` | `outfit/hook_outfit.lua` | Remove unsafe preview/customization actions from marked outfit grids |
+| `missionbriefinggui` | `weapon_modification/hook_weapon_modification.lua` | Compose the 2D editor modules |
+| `missionbriefinggui` | `build_transfer/hook_build_transfer.lua` | Load the PD2Builder adapter |
+| `missionbriefinggui` | `compatibility/hook_ehi.lua` | Load and retry the EHI adaptation |
+| `missionbriefinggui` | `weapon_context_menu/hook_weapon_context_menu.lua` | Capture right-click on briefing loadout slots |
+| `blackmarketgui` | `weapon_context_menu/hook_weapon_context_menu.lua` | Redirect briefing `w_mod` away from the 3D workshop |
+| `skilltreeguinew` | `skill_tree/hook_skill_tree.lua` | Restrict briefing skill-set actions and finish the session on close |
+| `specializationguinew` | `perk_deck/hook_perk_deck.lua` | Finish the perk-deck session on close |
+| `chatmanager` | `compatibility/hook_chat.lua` | Load chat support when chat classes exist |
+| `localizationmanager` | `localization/localization_english.lua` | Register English strings |
 
-### 13.2 Recipe: add a new option to BUILD
+Important internal composition:
 
-Suppose a new feature must open a custom screen.
-
-1. Create `lua/<feature>/controller_<feature>.lua`.
-2. Define `BriefingEnhanced.ControllerFeature = ... or {}` and an `open()` method.
-3. If a menu node is required, add a stable node ID to `ConstantsBriefingEnhanced.NODE_NAMES`.
-4. Register the node in `FactoryBriefingNode:ensure_all()`.
-5. Make `open()` call `ControllerMenuNavigation:open(screen_name, node_name)` so session cleanup stays centralized.
-6. Load the controller from a suitable `hook_<feature>.lua` or before `controller_briefing_menu.lua` uses it.
-7. Add the option callback in `ControllerBriefingMenu:show()`.
-8. Add its English `bbm_*` localization key.
-9. Ensure the component or vanilla screen calls `StateBriefingSession:finish(screen_name)` when it closes.
-10. Test open, back, repeated open and forced briefing close.
-
-Do not call `managers.menu:open_node` directly from the QuickMenu callback. Going through `ControllerMenuNavigation` prevents a failed opening from leaving BUILD locked.
-
-### 13.3 Recipe: add a new optional integration
-
-1. Place all third-party API knowledge in `adapter_<mod>.lua`.
-2. Implement `is_available()` using both the BLT enabled state and the exact globals/methods needed.
-3. Make every adapter public method harmless when unavailable.
-4. Load the adapter before the controller/view that may call it.
-5. Keep the base feature usable without the dependency.
-6. Test four cases: absent, installed but disabled, enabled but not initialized yet, fully available.
-
-Do not cache “unavailable” permanently when another mod may initialize later. EHI is the reference for a retryable late API; PD2Builder is the reference for an enabled BLT mod check.
-
-### 13.4 Recipe: add UI state or interaction
-
-1. Store selection/page/input state in `ComponentWeaponModification`.
-2. Add a small method that changes that state and returns `true` only when the input was consumed.
-3. Let the component call `_rebuild()` after a visible state change.
-4. Draw the result in `view_weapon_modification.lua`.
-5. Keep economic mutations in `ServiceWeaponModification`.
-6. Check `alive(panel)` for objects that may have been destroyed during menu transitions.
-
-### 13.5 Recipe: hook another PAYDAY 2 class
-
-1. Find the current decompiled PAYDAY 2 method and verify its parameters and return value.
-2. Add its game script path as a `hook_id` in `mod.txt`.
-3. Create or reuse a `hook_<feature>.lua` entry file.
-4. Load core first, then only the modules required by that context.
-5. Prefer `PostHook` for reacting after vanilla work and `PreHook` for preparing data before it.
-6. Use `OverrideFunction` only if input must be consumed or the original return value must be changed; save and call `Hooks:GetFunction` for all other cases.
-7. Give the hook a globally unique, stable ID.
-8. Guard installation with a feature hook flag if the entry can load more than once.
-
-### 13.6 Safe change checklist
-
-Before editing:
-
-- follow `mod.txt` from the relevant `hook_id` to the entry file;
-- identify which layer owns the behavior;
-- inspect the vanilla method and any local mod that hooks the same method.
-
-While editing:
-
-- use Lua 5.1 syntax;
-- preserve `ModPath` in a local or in `BriefingEnhanced.ModPath` before deferred callbacks;
-- protect lifecycle-sensitive objects;
-- keep optional dependencies behind adapters;
-- preserve historical IDs unless a migration is explicitly implemented;
-- never add feature code to `base/`, BeardLib or another mod.
-
-After editing:
-
-- validate `mod.txt` as strict JSON;
-- check that every `script_path` and `dofile` target exists;
-- search for duplicate hook IDs and temporary debug logs;
-- test the feature with all optional integrations enabled and disabled;
-- read the newest SuperBLT and Diesel crash logs.
-
-### 13.7 Debugging by symptom
-
-| Symptom | First files/objects to inspect |
+| Entry file | Modules loaded |
 |---|---|
-| The mod never loads | `mod.txt`, matching `hook_id`, entry `script_path`, SuperBLT log |
-| BUILD does not appear | `hook_mission_briefing.lua`, `MissionBriefingGui:init`, `ViewBriefingButton` |
-| BUILD appears but cannot be clicked | mouse overrides, button bounds, `gui._enabled`, blackscreen guard |
-| An option shows `ERROR: <ID>` | `localization_english.lua` and the exact `bbm_*` key |
-| A screen does not open | `FactoryBriefingNode`, active `kit_menu`, `ControllerMenuNavigation` |
-| BUILD stays blocked after Back | matching close hook, `StateBriefingSession:finish`, component close callback |
-| A weapon part is listed but not installed | service transaction arguments, `global_value`, availability and post-transaction blueprint |
-| Weapon workshop crashes on `menu_scene` | a 3D preview/crafting path was entered from briefing; keep the custom 2D path |
-| Feature works only with another mod enabled | adapter boundary or an unguarded third-party global is missing |
+| `briefing_menu/hook_mission_briefing.lua` | Node factory, skill/perk/outfit controllers, BUILD controller and view |
+| `weapon_inventory/hook_weapon_inventory.lua` | Inventory service and Drag and Drop adapter |
+| `weapon_modification/hook_weapon_modification.lua` | Service, controller, MWS adapter, statistics presenter, component and view |
+| `weapon_context_menu/hook_weapon_context_menu.lua` | Context-menu controller |
 
-## 14. Minimum in-game test matrix
+## 7. Briefing session lifecycle
 
-- Start the game and enter a lobby without errors.
-- Open and close `BUILD` repeatedly.
-- Open skill tree and perk deck, apply a change and return.
-- Open player styles and gloves from `BUILD`, equip an item, return and repeat.
-- Repeat the player-style and glove test with Market Favorites enabled and disabled.
-- Equip, buy and sell primary and secondary weapons.
-- Repeat inventory tests with Drag and Drop Inventory enabled and disabled.
-- Install, replace and remove weapon parts; test pagination and controller/mouse input.
-- Repeat statistics tests with More Weapon Stats enabled and disabled.
-- Repeat build transfer tests with PD2Builder enabled and disabled.
-- Return to the main menu, re-enter a lobby and verify that BUILD and outfit updates still work.
-- Read the latest SuperBLT log and Diesel crash log after testing.
+`StateBriefingSession` protects custom screens that replace the visible briefing.
+
+```text
+User action
+  -> ControllerMenuNavigation:open(screen, node)
+  -> StateBriefingSession:begin(screen)
+       store previous Global.block_update_outfit_information
+       set opened_from_briefing
+       block outfit refresh
+       hide tracked EHI elements
+       install chat access
+  -> managers.menu:open_node(...)
+  -> MissionBriefingGui:hide hides briefing panels/backdrop
+  -> custom screen
+  -> screen close hook / component close
+  -> StateBriefingSession:finish(screen)
+       reset state and restore previous outfit block
+       restore EHI visibility and briefing backdrop
+       refresh outfit information
+```
+
+Failure path: if `open_node` throws, `ControllerMenuNavigation` calls `reset(screen)` before showing an error. `MissionBriefingGui:init` and `close` also clear stale state.
+
+Only skill tree, perk deck and weapon modifications use this lifecycle. Outfit and glove routes reuse the vanilla `loadout` node and must **not** start a `StateBriefingSession`.
+
+`ServiceWeaponInventory.context` is separate. It marks only the current weapon category and source while `kit_menu` is active, allowing hooks to modify BlackMarket cells without affecting the main inventory.
+
+## 8. Feature paths
+
+### BUILD and custom nodes
+
+```text
+MissionBriefingGui:init
+  -> FactoryBriefingNode:ensure_all
+  -> ViewBriefingButton:create
+left-click BUILD
+  -> ControllerBriefingMenu:show
+  -> QuickMenu callback
+  -> target controller/adapter
+```
+
+The factory inserts nodes into `managers.menu:get_menu("kit_menu").data._nodes`. `menu_component_data` is assigned through `node:parameters()` after node construction.
+
+### Skill tree and perk deck
+
+The controller ensures nodes, then `ControllerMenuNavigation` opens `skilltree_new` or `skilltree`. Their class-specific close hooks finish the matching session. Skill-set switching is restricted because the briefing cannot safely rebuild every profile-dependent panel.
+
+### Outfits, gloves and armor
+
+`ControllerOutfit` opens vanilla `loadout` with data from `ServiceOutfitMenu`. The marked tabs use `populate_player_styles` and `populate_gloves`; PostHooks remove 3D preview/customization actions but retain equip actions.
+
+Armor right-click delegates to `NewLoadoutTab:open_node(5)`. Market Favorites compatibility is passive because its hooks see the same vanilla population methods.
+
+### Weapon selection, purchase, sale and movement
+
+`NewLoadoutTab` or `PlayerInventoryGui` marks `ServiceWeaponInventory.context`. BlackMarket hooks then:
+
+- enable buy, modify and sell only for the marked category;
+- rebuild actionable empty cells with their real inventory slot;
+- prevent sale of the last usable weapon;
+- remove unsafe `bw_preview` actions;
+- synchronize outfit data after a sale.
+
+When Drag and Drop Inventory is available, its own pickup/place/swap implementation remains authoritative. Briefing Enhanced only makes the generated weapon node eligible for that implementation.
+
+### Context menus
+
+`MissionBriefingGui` normally discards right-click before forwarding it to `NewLoadoutTab`. The context hook therefore wraps `mouse_pressed` at the parent:
+
+- weapon slots 1/2 → open inventory or modify equipped slot;
+- armor slot 5 → Gloves, Outfit or Armor.
+
+In a marked BlackMarket weapon grid, `choose_weapon_mods_callback` is redirected to `ControllerWeaponModification:open(category, slot)`. Outside that context, the original callback is always called.
+
+### Weapon modifications
+
+```text
+ControllerWeaponModification:open(category, slot?)
+  -> store category/slot in node menu_component_data
+  -> open custom component node
+  -> ComponentWeaponModification:refresh
+  -> ServiceWeaponModification:get_data
+  -> ViewWeaponModification renders categories, page, details and stats
+user confirms action
+  -> ServiceWeaponModification:confirm_install/remove
+  -> revalidate lock, compatibility, ownership and price
+  -> vanilla confirmation/consequence
+  -> buy_and_modify_weapon or remove_weapon_part
+  -> reread blueprint and refresh component
+```
+
+The service uses `get_dropable_mods_by_weapon_id`, preserves `global_value`, checks achievement/content/milestone locks, and resolves descriptions with `get_part_desc_by_part_id_from_weapon`. Missing localization keys yield an empty description, never `ERROR: <id>`.
+
+The component preserves icon aspect ratios and paginates `columns × rows` from constants. It never calls `_start_crafting_weapon`, `view_weapon` or a menu-scene API.
+
+### Weapon statistics
+
+`PresenterWeaponStatistics` obtains vanilla `TOTAL / BASE / MOD / SKILL` values from `WeaponDescription._get_stats` for the current and preview blueprints. It appends More Weapon Stats rows only when its adapter validates the complete runtime contract.
+
+### Build transfer
+
+The BUILD menu asks `AdapterPd2Builder:is_available()`. Import/export callbacks execute the dependency scripts under `pcall`; a PostHook on `BuilderLoader:set_build` refreshes outfit information.
+
+## 9. Optional integrations
+
+Adapters isolate version checks, globals and fallback behavior.
+
+| Integration | Adapter | Availability contract | Enabled behavior | Disabled/missing behavior |
+|---|---|---|---|---|
+| PD2Builder loader | `build_transfer/adapter_pd2builder.lua` | BLT mod exists, `IsEnabled()`, `BuilderLoader.load_build` and `upload_build` | Show import/export; execute dependency scripts; refresh outfit after import | Hide both BUILD entries |
+| Drag and Drop Inventory | `weapon_inventory/adapter_drag_drop_inventory.lua` | Enabled mod plus `DragDropInventory`, pickup/place methods and `ddi_swap_item` | Let dependency move/swap weapons in marked briefing grid | Keep vanilla equip/buy/sell |
+| More Weapon Stats | `weapon_modification/adapter_more_weapon_stats.lua` | Enabled mod plus initialized `Faker`, settings and required calculators | Append extended statistic rows | Render vanilla statistics only |
+| EHI | `compatibility/adapter_ehi.lua` | `MissionBriefingGui.AddXPBreakdown` exists | Track injected XP elements; hide/restore them with custom sessions | No overlay mutation |
+| Chat/translator | `compatibility/adapter_chat.lua` | Core chat classes; translator path additionally requires `ChatTranslatorMessage` | Keep briefing chat accessible; preserve translation hook | Base screens still operate |
+| Market Favorites | No adapter by design | Its hooks run on the reused vanilla populate methods | Favorites actions, badges and ordering appear automatically | Vanilla grid remains unchanged |
+| BeardLib updater | No Lua adapter; `main.xml` | BeardLib loads `AssetUpdates` and queries ModWorkshop mod `57999` | Check semantic versions at the main menu; expose a user-confirmed download/install action | The mod runs normally without update checks |
+
+Availability is evaluated at the point of use when dependency initialization order can vary. Adapter installation and wrapper hooks are idempotent. Core services must not retain dependency-owned data structures.
+
+The updater is intentionally declarative and separate from runtime feature adapters. Do not add a second SuperBLT `updates` definition: two update managers for the same release would produce competing notifications and installation paths.
+
+## 10. Compatibility policy
+
+- Preserve the original hook chain with `PostHook`/`PreHook` where possible.
+- An override must capture `Hooks:GetFunction(...)` and delegate outside the exact briefing context.
+- Never open the vanilla 3D weapon workshop from `kit_menu`.
+- Never modify shared dependencies (`base`, BeardLib, HopLib) for this feature.
+- Guard `managers.*`, `Global.*`, classes and panels with lifecycle-appropriate checks.
+- Keep historical namespaces, facades, hook IDs and component IDs.
+- Recompute weapon locks and consequences immediately before mutations.
+- Preserve selected weapon `category`, `slot` and part `global_value` end to end.
+- Treat optional mods as capabilities, not installation assumptions.
+- Keep outfit and inventory changes local; no custom LuaNetworking message is required.
+- Expect other mods to wrap `BlackMarketGui`, `MissionBriefingGui` and mouse input. Do not bypass their saved original functions.
+
+Known high-risk compatibility surfaces: Drag and Drop Inventory, MultipleWeaponModRows, More Weapon Stats, custom HUDs, EHI and profile-management mods.
+
+## 11. How to evolve the mod
+
+This section is an implementation guide. The goal is not merely to make a new action work once, but to place it where another PAYDAY 2 modder can trace, test and maintain it.
+
+### 11.1 Start with a feature contract
+
+Before editing code, write down five facts:
+
+| Question | Example |
+|---|---|
+| What starts the feature? | Left-click on BUILD, right-click on a loadout slot, game callback |
+| What input identifies the target? | `category`, crafted `slot`, selected tab |
+| Which object owns the truth? | `managers.blackmarket`, `managers.skilltree`, active menu node |
+| What changes? | Navigation only, local UI state, inventory/economic mutation |
+| What is the safe fallback? | Hide the option, call the original method, show a guarded error |
+
+This contract determines the module types. A click normally enters a controller; a game query or mutation belongs in a service; an optional global belongs behind an adapter; panels belong in a view/component.
+
+Do not start by adding logic to a hook. A hook is only the runtime entry point.
+
+### 11.2 Find and verify the PAYDAY 2 extension point
+
+Use an up-to-date Lua dump matching the installed game version:
+
+1. Find the class and method that currently implement the vanilla behavior.
+2. Read the full method, not only its name. Record its arguments, return values and fields read from `self`.
+3. Read its callers. A method may only be valid after another method initialized a node or scene.
+4. Search local mods for wrappers on the same method.
+5. Check whether the class already has a `mod.txt` entry in Briefing Enhanced.
+
+Useful searches:
+
+```powershell
+rg -n "function MissionBriefingGui:mouse_pressed" <PAYDAY_2_LUA_DUMP>
+rg -n --glob "*.lua" "Hooks:(PostHook|PreHook|OverrideFunction).*mouse_pressed" "PAYDAY 2/mods"
+rg -n "lib/managers/menu/missionbriefinggui" "Briefing Build Menu/mod.txt"
+```
+
+Choose the least invasive mechanism:
+
+| Need | Mechanism |
+|---|---|
+| Observe or adjust data after vanilla construction | `Hooks:PostHook` |
+| Mark context before vanilla runs | `Hooks:PreHook` |
+| Consume input or redirect one exact branch | `Hooks:OverrideFunction`, with saved original |
+
+An override must delegate every unrelated call:
+
+```lua
+local original_mouse_pressed = Hooks:GetFunction(MissionBriefingGui, "mouse_pressed")
+
+Hooks:OverrideFunction(MissionBriefingGui, "mouse_pressed", function(gui, button, x, y)
+	if button == Idstring("1")
+		and BE.ControllerExample:try_handle(gui, x, y) then
+		return true
+	end
+
+	return original_mouse_pressed(gui, button, x, y)
+end)
+```
+
+Returning `true` means the event was consumed. Returning it for an unrelated click can silently break another UI or mod.
+
+### 11.3 Create the feature folder and loading chain
+
+For a new feature named `profile_summary`, start with the minimum:
+
+```text
+lua/profile_summary/
+├── controller_profile_summary.lua
+└── hook_profile_summary.lua   # only if a new game-class trigger is required
+```
+
+Add `service_profile_summary.lua`, `view_profile_summary.lua` or `adapter_x.lua` only when the responsibility exists. Do not create empty architectural layers.
+
+Every module must be safe when loaded more than once:
+
+```lua
+BriefingEnhanced = BriefingEnhanced or BriefingBuildMenu or {}
+
+local BE = BriefingEnhanced
+
+BE.ControllerProfileSummary = BE.ControllerProfileSummary or {}
+
+function BE.ControllerProfileSummary:show()
+	-- Orchestration only.
+end
+```
+
+If an existing entry file already runs when the required class exists, load the module there:
+
+```lua
+dofile(BriefingEnhanced.ModPath .. "lua/profile_summary/controller_profile_summary.lua")
+```
+
+Create a new `mod.txt` hook only when a different PAYDAY 2 class must exist before installation:
+
+```json
+{
+    "hook_id": "lib/managers/menu/examplegui",
+    "script_path": "lua/profile_summary/hook_profile_summary.lua"
+}
+```
+
+Inside a hook shared by several `hook_id` values, branch on `RequiredScript` and use stable installation guards:
+
+```lua
+local required_script = string.lower(RequiredScript or "")
+
+BE.HookProfileSummary = BE.HookProfileSummary or {}
+
+if required_script == "lib/managers/menu/examplegui"
+	and not BE.HookProfileSummary.example_gui then
+	BE.HookProfileSummary.example_gui = true
+
+	Hooks:PostHook(ExampleGui, "init", "BriefingEnhanced_ProfileSummary_Init", function(gui)
+		BE.ControllerProfileSummary:on_gui_ready(gui)
+	end)
+end
+```
+
+### 11.4 Tutorial: add a simple action to BUILD
+
+The following example adds a profile summary dialog without creating a custom screen.
+
+**Step 1 — controller**
+
+Create `lua/profile_summary/controller_profile_summary.lua`:
+
+```lua
+BriefingEnhanced = BriefingEnhanced or BriefingBuildMenu or {}
+
+local BE = BriefingEnhanced
+
+BE.ControllerProfileSummary = BE.ControllerProfileSummary or {}
+
+function BE.ControllerProfileSummary:show()
+	if not (managers.experience and managers.localization) then
+		return false
+	end
+
+	local level = managers.experience:current_level() or 0
+
+	QuickMenu:new(
+		managers.localization:text("bbm_profile_summary_title"),
+		managers.localization:text("bbm_profile_summary_text", {
+			LEVEL = tostring(level)
+		}),
+		{
+			{
+				text = managers.localization:text("dialog_ok"),
+				is_cancel_button = true
+			}
+		},
+		true
+	)
+
+	return true
+end
+```
+
+**Step 2 — load the controller**
+
+Add this line to `briefing_menu/hook_mission_briefing.lua` with the other controller loads:
+
+```lua
+dofile(BriefingEnhanced.ModPath .. "lua/profile_summary/controller_profile_summary.lua")
+```
+
+**Step 3 — expose the BUILD option**
+
+Add an entry to the `options` table in `ControllerBriefingMenu:show`:
+
+```lua
+{
+	text = managers.localization:text("bbm_profile_summary_title"),
+	callback = function()
+		BE.ControllerProfileSummary:show()
+	end
+}
+```
+
+Insert it before `add_cancel_option(options)`.
+
+**Step 4 — localize**
+
+Add these entries to the existing table passed to `add_localized_strings` in `localization/localization_english.lua`:
+
+```lua
+bbm_profile_summary_title = "PROFILE SUMMARY",
+bbm_profile_summary_text = "Current level: $LEVEL",
+```
+
+**Step 5 — test the complete path**
+
+Restart the game, open BUILD repeatedly, select the entry, close with mouse and keyboard, and verify that no duplicate option appears after returning to the briefing.
+
+This feature does not hide the briefing or open a node, so it must not start `StateBriefingSession`.
+
+### 11.5 Tutorial: add a custom briefing screen
+
+A custom screen requires a node, component registration, component state, a view and lifecycle cleanup.
+
+**Step 1 — register the node**
+
+Extend `FactoryBriefingNode:ensure_all`. Nested tables must be assigned after `MenuNode:new`, which the factory already does through `node_parameters` or explicit parameters:
+
+```lua
+self:ensure(menu, "briefing_enhanced_example_node", {
+	menu_components = "briefing_enhanced_example_component",
+	topic_id = "bbm_example_title"
+})
+```
+
+**Step 2 — declare component manager methods**
+
+Do this from a hook on `menucomponentmanager`, not from `missionbriefinggui`:
+
+```lua
+function MenuComponentManager:create_briefing_enhanced_example(node)
+	self._be_example = BE.ComponentExample:new(
+		self:saferect_ws(),
+		self:fullscreen_ws(),
+		node
+	)
+	self:register_component("briefing_enhanced_example_component", self._be_example)
+end
+
+function MenuComponentManager:close_briefing_enhanced_example()
+	if self._be_example then
+		self:unregister_component("briefing_enhanced_example_component")
+		self._be_example:close()
+		self._be_example = nil
+	end
+
+	if BE.StateBriefingSession:current_screen() == "example" then
+		BE.StateBriefingSession:finish("example")
+	end
+end
+```
+
+Register those method names in `_active_components` as `FactoryBriefingNode` does for the weapon editor.
+
+**Step 3 — open through the lifecycle controller**
+
+```lua
+function BE.ControllerExample:open()
+	if not BE.FactoryBriefingNode:ensure_all() then
+		return false
+	end
+
+	return BE.ControllerMenuNavigation:open(
+		"example",
+		"briefing_enhanced_example_node"
+	)
+end
+```
+
+Never call `StateBriefingSession:begin` separately before `ControllerMenuNavigation:open`; the navigation controller owns begin/reset-on-failure.
+
+**Step 4 — split component and view**
+
+The component owns selection, page and input state. The view receives prepared values and only creates/updates panels. Its `close` path must remove every panel it created from the same workspace.
+
+**Step 5 — prove cleanup**
+
+Test normal Back, rapid repeated opening, an exception during `open_node`, lobby closure and return to the main menu. `Global.block_update_outfit_information` must equal its previous value after each path.
+
+### 11.6 Tutorial: add an optional integration
+
+Suppose `Example Stats` provides a global `ExampleStats:get_value`.
+
+**Step 1 — isolate detection and calls**
+
+Create `adapter_example_stats.lua` in the feature that consumes it:
+
+```lua
+BriefingEnhanced = BriefingEnhanced or BriefingBuildMenu or {}
+
+local BE = BriefingEnhanced
+
+BE.AdapterExampleStats = BE.AdapterExampleStats or {}
+
+function BE.AdapterExampleStats:is_available()
+	if not (BLT and BLT.Mods and BLT.Mods.GetModByName) then
+		return false
+	end
+
+	local mod = BLT.Mods:GetModByName("Example Stats")
+
+	return mod ~= nil
+		and mod:IsEnabled()
+		and ExampleStats ~= nil
+		and type(ExampleStats.get_value) == "function"
+end
+
+function BE.AdapterExampleStats:get_value(weapon_id)
+	if not self:is_available() then
+		return nil
+	end
+
+	local success, value = pcall(ExampleStats.get_value, ExampleStats, weapon_id)
+
+	return success and value or nil
+end
+```
+
+**Step 2 — consume the capability, not the mod**
+
+```lua
+local value = BE.AdapterExampleStats:get_value(weapon.weapon_id)
+
+if value ~= nil then
+	table.insert(rows, {
+		name = "EXAMPLE",
+		value = tostring(value)
+	})
+end
+```
+
+The base rows are built whether the adapter succeeds or not.
+
+**Step 3 — test four states**
+
+Test the dependency absent, installed but disabled, enabled before briefing initialization, and enabled but missing one expected method. Only the fully valid state may activate the feature.
+
+### 11.7 Tutorial: add or change a transaction
+
+UI state is not transaction authority. Re-read every mutable condition inside the confirmation callback:
+
+```lua
+params.yes_func = function()
+	local current = BE.ServiceExample:get_current_data(category, slot)
+
+	if not current or not BE.ServiceExample:can_apply(current, selected_id) then
+		managers.menu_component:post_event("menu_error")
+		return
+	end
+
+	BE.ServiceExample:apply(current, selected_id)
+	BE.ControllerExample:refresh()
+end
+```
+
+Use a closure when several values must survive until confirmation. SuperBLT's global `callback` helper captures only one fixed parameter.
+
+For weapon parts, preserve `category`, crafted `slot`, `part_id` and `global_value`; recompute achievement locks, compatibility, quantity, price and `get_modify_weapon_consequence` immediately before `buy_and_modify_weapon`.
+
+### 11.8 Tutorial: add a field to the weapon editor
+
+1. Read and validate raw data in `ServiceWeaponModification`.
+2. Add it to the service DTO; do not let the view query `managers.blackmarket`.
+3. If it is a calculated display value, format it in `PresenterWeaponStatistics`.
+4. Render it in `ViewWeaponModification` using existing fonts/colors and safe-rect dimensions.
+5. Refresh it after install/remove by rereading the blueprint.
+6. Test the equipped-weapon path and an explicit non-equipped crafted slot.
+
+For an icon, preserve the texture ratio:
+
+```lua
+local scale = math.min(frame_w / texture_w, frame_h / texture_h)
+local width = texture_w * scale
+local height = texture_h * scale
+
+bitmap:set_size(width, height)
+bitmap:set_center(frame:center())
+```
+
+Do not stretch a texture to both frame dimensions.
+
+### 11.9 Tutorial: add a briefing right-click action
+
+1. Add hit testing and routing to `ControllerWeaponContextMenu`.
+2. Validate that the briefing is enabled, not displaying an asset and not entering blackscreen.
+3. Update the selected `NewLoadoutTab` item before opening the menu.
+4. Delegate to a safe vanilla node/callback when possible.
+5. Return `true` only after opening the context menu.
+6. Preserve the original `MissionBriefingGui:mouse_pressed` for every other button and coordinate.
+
+Keep action order deterministic and append Cancel last:
+
+```lua
+local options = {
+	{
+		text = managers.localization:text("bbm_example_action"),
+		callback = function()
+			BE.ControllerExample:open()
+		end
+	}
+}
+
+table.insert(options, {
+	text = managers.localization:text("dialog_cancel"),
+	is_cancel_button = true
+})
+```
+
+### 11.10 Tutorial: publish a BeardLib-compatible update
+
+`main.xml` is the only updater declaration:
+
+```xml
+<table name="Briefing Enhanced">
+	<AssetUpdates
+		id="57999"
+		provider="modworkshop"
+		version="1.10.0"
+		semantic_version="true"
+	/>
+</table>
+```
+
+For every release:
+
+1. Choose one semantic version without a `v` prefix in repository files, for example `1.11.0`.
+2. Set the same version in `mod.txt` and `main.xml`.
+3. Publish that version on ModWorkshop mod `57999`. BeardLib accepts the `v` prefix returned by ModWorkshop, but repository files remain normalized.
+4. Build a ZIP with exactly one top-level `Briefing Build Menu/` directory containing `mod.txt`, `main.xml`, documentation and `lua/`.
+5. Keep the default full replacement. Do not set `dont_delete="true"`; stale Lua files are more dangerous than a clean install.
+6. Never persist user settings inside the mod directory because an update replaces it. Use `SavePath`.
+7. Install the previous public version in a disposable game copy, open the main menu and verify that BeardLib reports the new version.
+8. Confirm the download, restart PAYDAY 2, then verify the installed files and displayed version.
+
+The automatic part is the check and notification. Download and installation remain user-confirmed. Do not call `BeardLib.Menus.Mods:ForceDownload` from the mod.
+
+### 11.11 Review checklist for a change
+
+Before considering an implementation complete:
+
+1. Confirm that the owner folder and component types match their responsibilities.
+2. Confirm every hook has a stable ID and installation guard.
+3. Confirm overrides delegate outside their exact context.
+4. Confirm every opened session has normal, failure and forced-close cleanup.
+5. Confirm all manager/global/class accesses tolerate their lifecycle.
+6. Confirm localization IDs exist and missing external text cannot render `ERROR:`.
+7. Confirm optional integrations have a no-dependency path.
+8. Confirm no debug logs, Lua 5.2 syntax or shared-dependency edits were introduced.
+9. Run the relevant in-game matrix rows, then inspect the newest SuperBLT and Diesel crash logs.
+
+## 12. Minimum in-game test matrix
+
+| Area | Required cases | Expected result |
+|---|---|---|
+| Startup | Dependency set minimal; all optional mods enabled | No load error; BUILD visible |
+| BUILD lifecycle | Open/close each action repeatedly; press Back; force one unavailable node | No stuck overlay, BUILD input or outfit block |
+| Skills/perks | Open, change allowed data, close | Current profile updates; briefing restores |
+| Outfit/gloves/armor | Equip each type; Back navigation | Outfit refreshes; no 3D/customize action crash |
+| Weapon inventory | Primary/secondary; equip; buy slot; buy weapon; sell | Correct category/slot and vanilla economy |
+| Sale guards | Last weapon; last unlocked weapon | Sale action absent |
+| Context menus | Right-click both weapons and armor; Cancel each | Correct ordered actions; unrelated input preserved |
+| Weapon editor | Equipped entry and explicit owned slot; install/replace/remove | Correct blueprint, quantity and money |
+| Weapon locks | Achievement, milestone, DLC/content and incompatible parts | Locked parts cannot transact |
+| Editor UI | Multiple categories/pages; wide/tall icons; missing descriptions | Correct paging/aspect ratio; no `ERROR:` text |
+| Statistics | Current vs selected part; MWS enabled/disabled | Correct vanilla values; optional rows only when available |
+| Drag/drop | Dependency absent/disabled/enabled; move/swap/place/cancel | Safe fallback; profiles/bots remain consistent |
+| HUD/chat | EHI and supported HUD/chat mods enabled/disabled | Overlays restore; chat remains usable |
+| Updater | BeardLib absent; present with equal/lower/higher remote version; Ignore Updates enabled; valid/invalid ZIP | Base mod works without BeardLib; only a higher semantic version is offered; invalid downloads do not replace the installed mod |
+| Session roles | Host and client; ready/unready; return to menu | No stale state or peer requirement |
+| Reload | Restart game; optional SuperBLT reload if used locally | No duplicate hook/component |
+
+Static checks:
+
+```powershell
+Get-Content -Raw "Briefing Build Menu/mod.txt" | ConvertFrom-Json
+[xml](Get-Content -Raw "Briefing Build Menu/main.xml") | Out-Null
+rg -n "log\(|Application:error|io\.write|print\(" "Briefing Build Menu/lua"
+rg -n "BriefingBuildMenu_|bbm_" "Briefing Build Menu/lua"
+```
+
+In-game validation remains mandatory because static checks cannot reproduce Diesel menu lifecycles.
 
 ---
 
-# Français
+# Référence française
 
-## 1. Objectif
+## 1. Périmètre technique
 
-Briefing Enhanced ajoute une entrée `BUILD` au briefing de mission. Elle permet de gérer le build courant sans quitter le briefing :
+Briefing Enhanced étend `kit_menu` sans créer la scène 3D du BlackMarket. Les données, verrous, prix, confirmations et mutations restent délégués aux managers PAYDAY 2 ; le code du mod coordonne la navigation limitée au briefing et rend l'éditeur d'armes 2D.
 
-- arbre de compétences et perk deck ;
-- tenues et gants via le parcours BlackMarket vanilla du briefing ;
-- sélection des armes principale et secondaire ;
-- achat, vente et glisser-déposer optionnel des armes ;
-- modifications mécaniques des armes dans une interface 2D sûre ;
-- statistiques vanilla et valeurs optionnelles de More Weapon Stats ;
-- import et export optionnels avec PD2Builder.
+Invariants :
 
-Le mod réutilise les menus et transactions vanilla lorsqu'ils sont sûrs dans `kit_menu`. Il n'ouvre pas l'atelier 3D vanilla depuis le briefing, car `managers.menu_scene` n'y est pas garanti.
+- `BriefingEnhanced` est le namespace canonique ; `BriefingBuildMenu` reste son alias.
+- Les états fonctionnels sont limités au `kit_menu` actif.
+- L'initialisation et le nettoyage sont idempotents.
+- Toute intégration optionnelle possède un repli vanilla complet.
+- Le code reste compatible LuaJIT/Lua 5.1.
 
-Parcours de lecture conseillé pour un modeur débutant :
+## 2. Principes de conception
 
-1. Lire les sections 2 et 3 pour comprendre le vocabulaire SuperBLT.
-2. Suivre la section 8 depuis un `hook_id` du jeu jusqu'aux fichiers chargés.
-3. Lire la section 10 avant de modifier l'ouverture ou la fermeture d'un écran.
-4. Utiliser les tutoriels de la section 13 pour réaliser une évolution.
-5. Terminer par la matrice de tests de la section 14.
+- **Une fonctionnalité, un dossier.**
+- **KISS :** réutiliser les nœuds/callbacks vanilla sûrs ; créer une UI uniquement si le briefing l'impose.
+- **Responsabilité unique :** hook = raccordement, contrôleur = orchestration, service = règles, vue = rendu, adaptateur = frontière externe.
+- **Inversion des dépendances :** le métier dépend d'un contrat d'adaptateur, jamais directement d'un mod optionnel.
+- **Échec fermé :** une dépendance, classe, règle ou manager absent désactive l'action.
+- **Autorité vanilla :** économie, inventaire et synchronisation restent gérés par PAYDAY 2.
+- **Mutation ciblée :** les extensions BlackMarket ne s'activent que dans le contexte d'inventaire du briefing.
+- **Compatibilité avant fidélité visuelle :** aucune scène 3D n'est créée.
 
-## 2. Modèle mental pour débuter : comment un mod PAYDAY 2 s'exécute
+## 3. Types d'éléments d'architecture
 
-PAYDAY 2 n'exécute pas tous les fichiers Lua d'un mod au démarrage. SuperBLT lit d'abord `mod.txt`. Chaque entrée de `hooks` signifie : **lorsque PAYDAY 2 charge ce script du jeu, exécuter aussi ce fichier d'entrée du mod**.
-
-Il existe donc deux niveaux de chargement différents :
-
-```text
-PAYDAY 2 charge un script du jeu
-  → SuperBLT trouve le hook_id correspondant dans mod.txt
-  → SuperBLT exécute le fichier hook_*.lua déclaré
-  → ce fichier charge ses modules avec dofile(...)
-  → il enregistre des callbacks PreHook/PostHook/OverrideFunction
-  → ces callbacks s'exécutent plus tard quand la méthode du jeu est appelée
-```
-
-Exemple du bouton `BUILD` :
-
-```text
-Le jeu charge lib/managers/menu/missionbriefinggui
-  → mod.txt exécute lua/briefing_menu/hook_mission_briefing.lua
-  → ce fichier charge FactoryBriefingNode, les contrôleurs et ViewBriefingButton
-  → il enregistre un PostHook sur MissionBriefingGui:init
-  → PAYDAY 2 crée le briefing et appelle init
-  → le PostHook crée le bouton BUILD
-```
-
-Cette distinction est essentielle pour diagnostiquer un problème :
-
-- un crash en haut d'un fichier `hook_*.lua` indique un **problème de chargement ou de dépendance** ;
-- un crash dans le callback d'un hook indique un **problème de cycle de vie runtime** ;
-- un bouton visible mais sans effet indique souvent un **problème d'entrée, de nœud ou de contrôleur** ;
-- la bonne UI qui ne modifie rien indique souvent un **problème de service ou de transaction du jeu**.
-
-## 3. Glossaire pour débuter
-
-| Terme | Signification simple dans ce mod |
-|---|---|
-| `mod.txt` | Manifeste lu par SuperBLT ; il déclare le mod et ses points d'entrée dans les scripts du jeu |
-| `hook_id` | Chemin du script PAYDAY 2 qui déclenche un fichier d'entrée du mod |
-| `RequiredScript` | Valeur runtime contenant le script de jeu courant ; utilisée lorsqu'une même entrée gère plusieurs contextes |
-| `dofile(path)` | Exécute un autre fichier Lua ; utilisé ici pour composer les modules internes |
-| `Hooks:PreHook` | Exécute le code du mod avant la méthode originale |
-| `Hooks:PostHook` | Exécute le code du mod après la méthode originale |
-| `Hooks:OverrideFunction` | Entoure/remplace une méthode ; à réserver au changement de retour ou à la consommation d'une entrée |
-| `manager` | Service PAYDAY 2 durable accessible dans `managers`, comme `managers.menu` ou `managers.blackmarket` |
-| `node` de menu | Description d'un écran et du composant qu'il doit créer |
-| `component` de menu | Objet UI runtime qui possède les panels, les entrées et la fermeture |
-| `panel` / `workspace` | Conteneurs UI Diesel utilisés pour dessiner textes, rectangles et images |
-| `blueprint` | Liste des IDs de pièces assemblées sur une arme fabriquée |
-| `global_value` | Variante économique/origine d'un objet ; elle doit accompagner une transaction de pièce |
-| idempotent | Peut être chargé ou installé plusieurs fois sans dupliquer les hooks ou l'état |
-| façade | Méthode de compatibilité qui redirige une ancienne API vers la nouvelle implémentation |
-
-## 4. Principes de conception
-
-- **Une fonctionnalité, un dossier :** les fichiers qui évoluent ensemble restent regroupés.
-- **KISS :** les hooks raccordent PAYDAY 2 à la fonctionnalité ; les règles restent dans des modules nommés et limités.
-- **Responsabilité unique :** les vues dessinent, les contrôleurs coordonnent, les services appliquent les règles et les adaptateurs isolent les mods optionnels.
-- **Vanilla en priorité :** achats, ventes, équipements et transactions de pièces passent par les managers et confirmations de PAYDAY 2.
-- **Accès défensif :** les `managers.*`, panels et globals de mods optionnels dépendants du cycle de vie sont vérifiés avant utilisation.
-- **Chargement idempotent :** namespaces et drapeaux empêchent l'installation multiple des hooks.
-- **Rétrocompatibilité :** les anciens IDs et points d'entrée publics sont conservés par des alias et façades.
-
-## 5. Architecture des dossiers
-
-```text
-Briefing Build Menu/
-├── mod.txt
-├── TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md
-└── lua/
-    ├── core/
-    ├── briefing_menu/
-    ├── skill_tree/
-    ├── perk_deck/
-    ├── outfit/
-    ├── weapon_inventory/
-    ├── weapon_modification/
-    ├── build_transfer/
-    ├── compatibility/
-    └── localization/
-```
-
-| Dossier | Responsabilité |
-|---|---|
-| `core/` | Namespace, constantes, session, navigation, dialogues, synchronisation d'outfit et façade historique |
-| `briefing_menu/` | Bouton `BUILD`, menu contextuel et création des nœuds du `kit_menu` |
-| `skill_tree/` | Ouverture, restriction des entrées et nettoyage de l'arbre de compétences |
-| `perk_deck/` | Ouverture et nettoyage du menu des perk decks |
-| `outfit/` | Construit et ouvre les onglets vanilla du loadout, puis retire les actions dangereuses |
-| `weapon_inventory/` | Sélection, achat, vente et intégration de Drag and Drop Inventory |
-| `weapon_modification/` | Recherche des pièces, transactions, composant 2D, rendu et statistiques |
-| `build_transfer/` | Intégration optionnelle de PD2Builder loader |
-| `compatibility/` | Adaptateurs EHI et chat |
-| `localization/` | Textes anglais affichés par le mod |
-
-## 6. Types de composants et convention de nommage
-
-Les noms descendent du rôle technique général vers la fonctionnalité ou la nature :
-
-| Préfixe | Rôle | Exemple |
+| Type | Responsabilité | Exclusion |
 |---|---|---|
-| `Hook` | Raccorde une classe PAYDAY 2 ou un événement au mod | `HookMissionBriefing` |
-| `Controller` | Coordonne un parcours utilisateur | `ControllerWeaponModification` |
-| `Service` | Contient des règles ou mutations réutilisables | `ServiceWeaponInventory` |
-| `Adapter` | Isole l'API d'un mod externe ou optionnel | `AdapterMoreWeaponStats` |
-| `Component` | Possède le cycle de vie, l'état et les entrées d'une UI | `ComponentWeaponModification` |
-| `View` | Crée ou dessine des éléments visuels | `ViewBriefingButton` |
-| `Presenter` | Transforme les données du jeu en valeurs affichables | `PresenterWeaponStatistics` |
-| `State` | Possède un état runtime explicite | `StateBriefingSession` |
-| `Factory` | Crée et enregistre des objets | `FactoryBriefingNode` |
-| `Constants` | Conserve les identifiants stables et constantes de mise en page | `ConstantsBriefingEnhanced` |
+| `hook_*` | Charger les modules au bon `hook_id` et raccorder les classes du jeu | Règles métier et gros rendu UI |
+| `Controller*` | Valider le contexte et orchestrer une action utilisateur | Appels bruts aux mods optionnels |
+| `Service*` | Interroger les managers, appliquer les règles et effectuer les transactions | Installation des hooks d'entrée |
+| `State*` | Posséder un cycle de vie borné et restaurer l'état précédent | Rendu |
+| `Factory*` | Créer/enregistrer nœuds et composants idempotents | Transactions |
+| `Component*` | Porter l'état interactif et les entrées d'un écran custom | Politique économique/déverrouillage |
+| `View*` | Créer, mettre à jour et détruire les éléments visuels | Navigation et mutations |
+| `Presenter*` | Transformer les données métier pour l'affichage | Mutation du jeu |
+| `Adapter*` | Détecter et encapsuler l'API d'un mod optionnel/concurrent | Politique métier principale |
+| `Facade*` | Préserver les anciens noms publics par délégation | Nouveau comportement |
+| `localization_*` | Enregistrer les textes | Règles runtime |
 
-Les fichiers utilisent le `snake_case` minuscule et commencent par le type du composant, par exemple `service_weapon_modification.lua`.
+Direction des dépendances :
 
-Dans une table déjà typée, les méthodes utilisent des actions courtes :
+```text
+Hook SuperBLT -> Contrôleur -> Service / État / Factory
+                              -> Presenter -> Adaptateur
+Composant -> Vue
+```
+
+## 4. Architecture des dossiers
+
+| Chemin | Responsabilité |
+|---|---|
+| `mod.txt` | Identité, version et hooks de scripts SuperBLT |
+| `main.xml` | Déclaration BeardLib `AssetUpdates` pour la publication ModWorkshop officielle |
+| `lua/core/` | Bootstrap, constantes, état de session, navigation, dialogues, synchronisation d'outfit et façade historique |
+| `lua/briefing_menu/` | Bouton BUILD, QuickMenu et enregistrement des nœuds `kit_menu` |
+| `lua/skill_tree/` | Ouverture, restrictions et fermeture de l'arbre de compétences |
+| `lua/perk_deck/` | Ouverture et fermeture des spécialisations |
+| `lua/outfit/` | Réutilisation protégée du nœud loadout pour les tenues et gants |
+| `lua/weapon_inventory/` | Contexte, équipement, achat, vente et adaptateur Drag and Drop |
+| `lua/weapon_context_menu/` | Clic droit des armes/armure et redirection de la modification BlackMarket |
+| `lua/weapon_modification/` | Règles de pièces, transactions, composant, rendu, statistiques et adaptateur MWS |
+| `lua/build_transfer/` | Pont PD2Builder |
+| `lua/compatibility/` | Adaptations EHI et chat |
+| `lua/localization/` | Textes anglais |
+
+`core/bootstrap.lua` ne charge que le socle commun. Chaque fichier `hook_*` compose sa fonctionnalité lorsque la classe PAYDAY 2 visée existe.
+
+## 5. Convention de nommage
+
+- Fichier : `<type>_<fonctionnalité>.lua`.
+- Table/classe : `[Type][Nature][Qualificatif]`, par exemple `ControllerWeaponModification`.
+- Méthode d'une table typée : verbe court (`open`, `refresh`, `install`, `remove`).
+- Booléen : `is_`, `has_`, `can_` ou `should_`.
+- Constante : majuscules snake case dans `ConstantsBriefingEnhanced`.
+- Catégories des managers : `primaries` et `secondaries`.
+- Callback différée avec plusieurs valeurs : closure Lua 5.1.
+
+Les IDs `bbm_*`, hooks `BriefingBuildMenu_*`, noms de nœuds/composants, façades, alias `BriefingBuildMenu`, global `BriefingWeaponModificationsGui` et méthodes `create_bbm_*`/`close_bbm_*` sont stables et ne doivent pas être renommés.
+
+## 6. Carte des déclencheurs et fichiers
+
+| Déclencheur PAYDAY 2 | Fichier | Rôle |
+|---|---|---|
+| `menucomponentmanager` | `weapon_modification/hook_menu_component.lua` | Déclarer la création/fermeture du composant |
+| `missionbriefinggui` | `core/hook_bootstrap.lua` | Initialiser le socle |
+| `missionbriefinggui` | `briefing_menu/hook_mission_briefing.lua` | Nœuds, bouton BUILD, souris et nettoyage |
+| `missionbriefinggui` | `weapon_inventory/hook_weapon_inventory.lua` | Contexte/grilles d'armes du briefing |
+| `playerinventorygui` | `weapon_inventory/hook_weapon_inventory.lua` | Parcours d'inventaire alternatif |
+| `blackmarketgui` | `weapon_inventory/hook_weapon_inventory.lua` | Achat, vente, modification et sécurité des cellules |
+| `blackmarketgui` | `outfit/hook_outfit.lua` | Retirer les actions 3D dangereuses des grilles marquées |
+| `missionbriefinggui` | `weapon_modification/hook_weapon_modification.lua` | Composer l'éditeur 2D |
+| `missionbriefinggui` | `build_transfer/hook_build_transfer.lua` | Charger l'adaptateur PD2Builder |
+| `missionbriefinggui` | `compatibility/hook_ehi.lua` | Charger/retenter l'adaptation EHI |
+| `missionbriefinggui` | `weapon_context_menu/hook_weapon_context_menu.lua` | Clic droit du loadout |
+| `blackmarketgui` | `weapon_context_menu/hook_weapon_context_menu.lua` | Rediriger `w_mod` dans le contexte marqué |
+| `skilltreeguinew` | `skill_tree/hook_skill_tree.lua` | Restrictions et fin de session |
+| `specializationguinew` | `perk_deck/hook_perk_deck.lua` | Fin de session |
+| `chatmanager` | `compatibility/hook_chat.lua` | Support du chat |
+| `localizationmanager` | `localization/localization_english.lua` | Textes anglais |
+
+Chaînes de composition principales :
+
+- `hook_mission_briefing` → factory de nœuds, contrôleurs skill/perk/outfit/BUILD et vue du bouton.
+- `hook_weapon_inventory` → service d'inventaire + adaptateur Drag and Drop.
+- `hook_weapon_modification` → service, contrôleur, adaptateur MWS, presenter, composant et vue.
+- `hook_weapon_context_menu` → contrôleur des menus contextuels.
+
+## 7. Cycle de vie d'une session de briefing
+
+```text
+Action utilisateur
+  -> ControllerMenuNavigation:open
+  -> StateBriefingSession:begin
+       sauvegarder Global.block_update_outfit_information
+       marquer opened_from_briefing
+       bloquer les refreshs d'outfit
+       masquer les éléments EHI suivis
+       installer l'accès au chat
+  -> managers.menu:open_node
+  -> MissionBriefingGui:hide masque le briefing
+  -> écran custom
+  -> hook close / fermeture du composant
+  -> StateBriefingSession:finish
+       restaurer l'état et le blocage précédent
+       restaurer EHI et le backdrop
+       rafraîchir l'outfit
+```
+
+Si `open_node` échoue, `ControllerMenuNavigation` exécute `reset` avant le dialogue d'erreur. `MissionBriefingGui:init` et `close` nettoient aussi tout état résiduel.
+
+Seuls l'arbre de compétences, le perk deck et l'éditeur d'armes utilisent cette session. Les tenues/gants passent par le nœud vanilla `loadout` et ne doivent pas créer de `StateBriefingSession`.
+
+`ServiceWeaponInventory.context` est un état distinct : il marque la catégorie et la source d'une grille d'armes uniquement tant que `kit_menu` est actif.
+
+## 8. Parcours des fonctionnalités
+
+### BUILD
+
+`MissionBriefingGui:init` enregistre les nœuds et crée le bouton. Le clic gauche appelle `ControllerBriefingMenu:show`, puis chaque callback QuickMenu délègue au contrôleur ou à l'adaptateur propriétaire.
+
+### Compétences et perk decks
+
+Le contrôleur vérifie les nœuds puis ouvre `skilltree_new` ou `skilltree` via `ControllerMenuNavigation`. Le hook `close` de la classe affichée termine la session correspondante.
+
+### Tenues, gants et armure
+
+`ControllerOutfit` ouvre le nœud vanilla `loadout` avec deux onglets construits par `ServiceOutfitMenu`. Les actions de preview/customisation 3D sont retirées, les actions d'équipement restent vanilla. L'armure délègue à `NewLoadoutTab:open_node(5)`.
+
+### Inventaire d'armes
+
+L'ouverture depuis `NewLoadoutTab` ou `PlayerInventoryGui` marque le contexte. Les hooks BlackMarket activent les actions sûres, reconstruisent les cases vides avec leur vrai slot, empêchent la vente de la dernière arme utilisable et retirent les previews 3D.
+
+### Menus contextuels
+
+Le clic droit est capturé dans `MissionBriefingGui:mouse_pressed`, car la classe parente ne le transmet pas. Les slots 1/2 ouvrent Inventaire/Modifier ; le slot 5 ouvre Gants/Tenue/Armure. Dans une grille BlackMarket marquée, `choose_weapon_mods_callback` ouvre l'éditeur 2D avec le `slot` exact. Tous les autres contextes appellent l'original.
+
+### Modification d'armes
+
+```text
+ControllerWeaponModification:open(catégorie, slot?)
+  -> paramètres du nœud
+  -> ComponentWeaponModification
+  -> ServiceWeaponModification:get_data
+  -> ViewWeaponModification
+confirmation
+  -> nouvelle validation des verrous/compatibilité/quantité/prix
+  -> conséquence et confirmation vanilla
+  -> buy_and_modify_weapon / remove_weapon_part
+  -> relecture du blueprint et refresh
+```
+
+Le service emploie `get_dropable_mods_by_weapon_id`, conserve `global_value`, contrôle les verrous de succès/contenu/milestone et résout les descriptions avec `get_part_desc_by_part_id_from_weapon`. Une localisation absente retourne une description vide.
+
+Le composant pagine selon les constantes, préserve le ratio des icônes et ne touche jamais aux API de scène 3D.
+
+### Statistiques
+
+`PresenterWeaponStatistics` utilise `WeaponDescription._get_stats` pour comparer les blueprints courant et prévisualisé. Les lignes More Weapon Stats ne sont ajoutées qu'après validation complète de son adaptateur.
+
+### Import/export
+
+Le menu BUILD teste `AdapterPd2Builder:is_available()`. Les scripts de la dépendance sont exécutés sous `pcall`, puis un PostHook de `BuilderLoader:set_build` rafraîchit l'outfit.
+
+## 9. Intégrations optionnelles
+
+| Intégration | Adaptateur | Contrat de disponibilité | Comportement actif | Repli |
+|---|---|---|---|---|
+| PD2Builder loader | `build_transfer/adapter_pd2builder.lua` | Mod activé + méthodes `BuilderLoader` requises | Import/export et refresh après import | Entrées masquées |
+| Drag and Drop Inventory | `weapon_inventory/adapter_drag_drop_inventory.lua` | Mod activé + globals/méthodes de pickup, place et swap | Déplacement/permutation par la dépendance | Équipement/achat/vente vanilla |
+| More Weapon Stats | `weapon_modification/adapter_more_weapon_stats.lua` | Mod activé + `Faker`, options et calculateurs initialisés | Lignes statistiques étendues | Statistiques vanilla |
+| EHI | `compatibility/adapter_ehi.lua` | `AddXPBreakdown` disponible | Suivi puis masquage/restauration des éléments XP | Aucune mutation |
+| Chat/traducteur | `compatibility/adapter_chat.lua` | Classes chat ; `ChatTranslatorMessage` pour la traduction | Accès au chat et chaîne de traduction conservés | Fonctionnalités principales inchangées |
+| Market Favorites | Aucun, volontairement | Hooks externes sur les populateurs vanilla réutilisés | Actions, badges et tri ajoutés par ce mod | Grilles vanilla |
+| Mise à jour BeardLib | Aucun adaptateur Lua ; `main.xml` | BeardLib charge `AssetUpdates` et interroge le mod ModWorkshop `57999` | Comparaison sémantique au menu principal et téléchargement/install confirmé par l'utilisateur | Le mod fonctionne normalement sans vérification |
+
+La disponibilité est testée au moment utile lorsque l'ordre d'initialisation peut varier. Les installations sont idempotentes. Aucun service principal ne conserve une structure de données appartenant à une dépendance.
+
+L'updater est volontairement déclaratif et séparé des adaptateurs runtime. Ne pas ajouter en parallèle une section `updates` SuperBLT : deux gestionnaires pour une même publication provoqueraient des notifications et chemins d'installation concurrents.
+
+## 10. Politique de compatibilité
+
+- Préférer `PostHook`/`PreHook`.
+- Un override capture l'original avec `Hooks:GetFunction` et lui délègue tous les contextes non ciblés.
+- Ne jamais ouvrir l'atelier 3D depuis `kit_menu`.
+- Ne jamais modifier `base`, BeardLib ou HopLib pour cette fonctionnalité.
+- Protéger les managers, globals, classes et panels à cycle de vie variable.
+- Conserver les IDs et façades historiques.
+- Revérifier les verrous et conséquences juste avant toute mutation.
+- Transmettre `category`, `slot` et `global_value` sans perte.
+- Considérer les mods optionnels comme des capacités vérifiées, pas comme des installations présumées.
+- Ne pas contourner la chaîne d'overrides de `BlackMarketGui`, `MissionBriefingGui` ou des entrées souris.
+
+Surfaces à risque : Drag and Drop Inventory, MultipleWeaponModRows, More Weapon Stats, HUDs custom, EHI et gestionnaires de profils.
+
+## 11. Comment faire évoluer le mod
+
+Cette partie est un guide d'implémentation. L'objectif n'est pas seulement de faire fonctionner une action, mais de l'intégrer à un emplacement qu'un autre moddeur PAYDAY 2 pourra comprendre, tester et maintenir.
+
+### 11.1 Définir le contrat de la fonctionnalité
+
+Avant de modifier le code, répondre à cinq questions :
+
+| Question | Exemple |
+|---|---|
+| Quel événement déclenche la fonctionnalité ? | Clic sur BUILD, clic droit sur un slot, callback du jeu |
+| Quelles données identifient la cible ? | `category`, `slot` fabriqué, onglet sélectionné |
+| Quel objet possède la donnée de référence ? | `managers.blackmarket`, `managers.skilltree`, nœud actif |
+| Quel état sera modifié ? | Navigation, UI locale, inventaire ou économie |
+| Quel est le repli sûr ? | Masquer l'option, appeler l'original, afficher une erreur contrôlée |
+
+Ce contrat détermine les composants nécessaires :
+
+- le clic entre dans un contrôleur ;
+- une lecture ou mutation du jeu appartient à un service ;
+- un global d'un autre mod reste derrière un adaptateur ;
+- la création des panels appartient à une vue ou un composant.
+
+Ne pas commencer par écrire la logique dans un hook. Le hook est uniquement le point d'entrée runtime.
+
+### 11.2 Trouver et valider le point d'extension PAYDAY 2
+
+Employer un dump Lua correspondant à la version installée du jeu :
+
+1. Trouver la classe et la méthode qui portent le comportement vanilla.
+2. Lire la méthode entière : arguments, valeur de retour et champs utilisés sur `self`.
+3. Lire ses appelants. Certaines méthodes ne sont valides qu'après la création d'un nœud ou d'une scène.
+4. Rechercher les mods locaux qui hookent la même méthode.
+5. Vérifier si `mod.txt` charge déjà Briefing Enhanced au moment où cette classe existe.
+
+Recherches utiles :
+
+```powershell
+rg -n "function MissionBriefingGui:mouse_pressed" <DUMP_LUA_PAYDAY_2>
+rg -n --glob "*.lua" "Hooks:(PostHook|PreHook|OverrideFunction).*mouse_pressed" "PAYDAY 2/mods"
+rg -n "lib/managers/menu/missionbriefinggui" "Briefing Build Menu/mod.txt"
+```
+
+Choisir le mécanisme le moins intrusif :
+
+| Besoin | Mécanisme |
+|---|---|
+| Observer ou ajuster les données après leur création vanilla | `Hooks:PostHook` |
+| Marquer un contexte avant l'exécution vanilla | `Hooks:PreHook` |
+| Consommer une entrée ou rediriger une branche précise | `Hooks:OverrideFunction`, original sauvegardé |
+
+Patron d'override sûr :
 
 ```lua
-BriefingEnhanced.ControllerPerkDeck:open()
-BriefingEnhanced.ServiceWeaponModification:install(category, part_type, part)
+local original_mouse_pressed = Hooks:GetFunction(MissionBriefingGui, "mouse_pressed")
+
+Hooks:OverrideFunction(MissionBriefingGui, "mouse_pressed", function(gui, button, x, y)
+	if button == Idstring("1")
+		and BE.ControllerExample:try_handle(gui, x, y) then
+		return true
+	end
+
+	return original_mouse_pressed(gui, button, x, y)
+end)
 ```
 
-Le nom du fichier n'est pas répété dans chaque méthode, car la table propriétaire donne déjà ce contexte. Les fonctions locales utilisent des actions explicites comme `build_part_data` ou `configure_locked_slot`.
+Le retour `true` signifie que l'événement est consommé. Le retourner pour un clic non concerné peut casser silencieusement une autre UI ou un autre mod.
 
-Les identifiants stables conservent leurs noms historiques `BriefingBuildMenu_*`, `bbm_*` ou `briefing_build_menu_*`. Ils ne doivent pas être renommés sans migration : les hooks SuperBLT, nœuds, localisations ou wrappers tiers peuvent en dépendre.
+### 11.3 Créer le dossier et la chaîne de chargement
 
-## 7. Namespace et chargement interne
+Pour une fonctionnalité `profile_summary`, commencer avec le minimum :
 
-`mod.txt` déclare chaque `hook_id` PAYDAY 2 et son script d'entrée. Un script n'est chargé que lorsque la classe de jeu correspondante est disponible.
+```text
+lua/profile_summary/
+├── controller_profile_summary.lua
+└── hook_profile_summary.lua   # uniquement si un nouveau déclencheur est nécessaire
+```
 
-Chaque entrée charge `lua/core/bootstrap.lua`. Le bootstrap :
+Ajouter un service, une vue ou un adaptateur uniquement si cette responsabilité existe. Une couche vide n'améliore pas l'architecture.
 
-1. crée la table canonique `BriefingEnhanced` ;
-2. fait pointer `BriefingBuildMenu` vers la même table ;
-3. capture `ModPath` une seule fois ;
-4. charge les modules du noyau une seule fois avec `_core_loaded`.
+Chaque module doit supporter plusieurs chargements :
 
-Les hooks de fonctionnalité chargent ensuite uniquement leurs services, contrôleurs, adaptateurs, presenters, composants ou vues. Leurs tables possèdent des drapeaux d'installation afin qu'un script routé dans plusieurs contextes n'enregistre pas deux fois ses hooks.
+```lua
+BriefingEnhanced = BriefingEnhanced or BriefingBuildMenu or {}
 
-## 8. Carte exacte des déclencheurs et fichiers
+local BE = BriefingEnhanced
 
-Commencez ici pour comprendre pourquoi un fichier est chargé. La colonne de gauche est le script PAYDAY 2. Celle du milieu est le fichier que SuperBLT exécute depuis `mod.txt`.
+BE.ControllerProfileSummary = BE.ControllerProfileSummary or {}
 
-| Déclencheur PAYDAY 2 (`hook_id`) | Fichier d'entrée du mod | Chargement ou installation effectuée |
+function BE.ControllerProfileSummary:show()
+	-- Orchestration uniquement.
+end
+```
+
+Si un fichier d'entrée existant est déjà chargé au bon moment, y composer le module :
+
+```lua
+dofile(BriefingEnhanced.ModPath .. "lua/profile_summary/controller_profile_summary.lua")
+```
+
+Ajouter une entrée dans `mod.txt` seulement si une autre classe PAYDAY 2 doit exister :
+
+```json
+{
+    "hook_id": "lib/managers/menu/examplegui",
+    "script_path": "lua/profile_summary/hook_profile_summary.lua"
+}
+```
+
+Pour un hook chargé par plusieurs `hook_id`, filtrer `RequiredScript` et protéger l'installation :
+
+```lua
+local required_script = string.lower(RequiredScript or "")
+
+BE.HookProfileSummary = BE.HookProfileSummary or {}
+
+if required_script == "lib/managers/menu/examplegui"
+	and not BE.HookProfileSummary.example_gui then
+	BE.HookProfileSummary.example_gui = true
+
+	Hooks:PostHook(ExampleGui, "init", "BriefingEnhanced_ProfileSummary_Init", function(gui)
+		BE.ControllerProfileSummary:on_gui_ready(gui)
+	end)
+end
+```
+
+### 11.4 Tutoriel : ajouter une action simple à BUILD
+
+Cet exemple ajoute un résumé du profil sous forme de dialogue, sans créer d'écran custom.
+
+**Étape 1 — créer le contrôleur**
+
+Créer `lua/profile_summary/controller_profile_summary.lua` :
+
+```lua
+BriefingEnhanced = BriefingEnhanced or BriefingBuildMenu or {}
+
+local BE = BriefingEnhanced
+
+BE.ControllerProfileSummary = BE.ControllerProfileSummary or {}
+
+function BE.ControllerProfileSummary:show()
+	if not (managers.experience and managers.localization) then
+		return false
+	end
+
+	local level = managers.experience:current_level() or 0
+
+	QuickMenu:new(
+		managers.localization:text("bbm_profile_summary_title"),
+		managers.localization:text("bbm_profile_summary_text", {
+			LEVEL = tostring(level)
+		}),
+		{
+			{
+				text = managers.localization:text("dialog_ok"),
+				is_cancel_button = true
+			}
+		},
+		true
+	)
+
+	return true
+end
+```
+
+Le contrôleur valide le runtime, lit la valeur nécessaire et coordonne l'ouverture. Il ne crée pas lui-même de panel Diesel.
+
+**Étape 2 — charger le contrôleur**
+
+Dans `briefing_menu/hook_mission_briefing.lua`, ajouter avec les autres `dofile` :
+
+```lua
+dofile(BriefingEnhanced.ModPath .. "lua/profile_summary/controller_profile_summary.lua")
+```
+
+**Étape 3 — ajouter l'option**
+
+Dans la table `options` de `ControllerBriefingMenu:show`, avant `add_cancel_option(options)` :
+
+```lua
+{
+	text = managers.localization:text("bbm_profile_summary_title"),
+	callback = function()
+		BE.ControllerProfileSummary:show()
+	end
+}
+```
+
+**Étape 4 — ajouter les textes**
+
+Ajouter ces entrées dans la table existante passée à `add_localized_strings` dans `localization/localization_english.lua` :
+
+```lua
+bbm_profile_summary_title = "PROFILE SUMMARY",
+bbm_profile_summary_text = "Current level: $LEVEL",
+```
+
+**Étape 5 — tester le parcours**
+
+Redémarrer le jeu, ouvrir BUILD plusieurs fois, déclencher l'action, fermer avec la souris puis le clavier et vérifier qu'aucune option n'est dupliquée après le retour au briefing.
+
+Ce dialogue ne masque pas le briefing et n'ouvre aucun nœud : il ne doit pas démarrer de `StateBriefingSession`.
+
+### 11.5 Tutoriel : ajouter un écran custom au briefing
+
+Un écran custom nécessite un nœud, l'enregistrement d'un composant, un état interactif, une vue et un nettoyage.
+
+**Étape 1 — enregistrer le nœud**
+
+Étendre `FactoryBriefingNode:ensure_all` :
+
+```lua
+self:ensure(menu, "briefing_enhanced_example_node", {
+	menu_components = "briefing_enhanced_example_component",
+	topic_id = "bbm_example_title"
+})
+```
+
+`CoreMenuNode.MenuNode:new` ignore certaines tables imbriquées. Les données complexes doivent être affectées après la construction via `node:parameters()`, comme le fait la factory.
+
+**Étape 2 — déclarer le composant**
+
+Les méthodes doivent être déclarées depuis un hook sur `menucomponentmanager` :
+
+```lua
+function MenuComponentManager:create_briefing_enhanced_example(node)
+	self._be_example = BE.ComponentExample:new(
+		self:saferect_ws(),
+		self:fullscreen_ws(),
+		node
+	)
+	self:register_component("briefing_enhanced_example_component", self._be_example)
+end
+
+function MenuComponentManager:close_briefing_enhanced_example()
+	if self._be_example then
+		self:unregister_component("briefing_enhanced_example_component")
+		self._be_example:close()
+		self._be_example = nil
+	end
+
+	if BE.StateBriefingSession:current_screen() == "example" then
+		BE.StateBriefingSession:finish("example")
+	end
+end
+```
+
+Enregistrer ensuite ces callbacks dans `_active_components`, sur le modèle de `FactoryBriefingNode` pour l'éditeur d'armes.
+
+**Étape 3 — ouvrir par le contrôleur de navigation**
+
+```lua
+function BE.ControllerExample:open()
+	if not BE.FactoryBriefingNode:ensure_all() then
+		return false
+	end
+
+	return BE.ControllerMenuNavigation:open(
+		"example",
+		"briefing_enhanced_example_node"
+	)
+end
+```
+
+Ne pas appeler séparément `StateBriefingSession:begin`. `ControllerMenuNavigation` possède le début de session et le `reset` en cas d'échec de `open_node`.
+
+**Étape 4 — séparer composant et vue**
+
+Le composant porte la sélection, la page et les entrées clavier/souris. La vue reçoit des valeurs déjà préparées et crée/met à jour les panels. `close` doit retirer chaque panel du workspace qui l'a créé.
+
+**Étape 5 — prouver le nettoyage**
+
+Tester Retour normal, ouvertures rapides répétées, échec de `open_node`, fermeture du lobby et retour au menu principal. Après chaque parcours, `Global.block_update_outfit_information` doit retrouver sa valeur précédente.
+
+### 11.6 Tutoriel : ajouter une intégration optionnelle
+
+Supposons qu'un mod `Example Stats` fournisse `ExampleStats:get_value`.
+
+**Étape 1 — isoler la détection et l'appel**
+
+Créer `adapter_example_stats.lua` dans le dossier de la fonctionnalité consommatrice :
+
+```lua
+BriefingEnhanced = BriefingEnhanced or BriefingBuildMenu or {}
+
+local BE = BriefingEnhanced
+
+BE.AdapterExampleStats = BE.AdapterExampleStats or {}
+
+function BE.AdapterExampleStats:is_available()
+	if not (BLT and BLT.Mods and BLT.Mods.GetModByName) then
+		return false
+	end
+
+	local mod = BLT.Mods:GetModByName("Example Stats")
+
+	return mod ~= nil
+		and mod:IsEnabled()
+		and ExampleStats ~= nil
+		and type(ExampleStats.get_value) == "function"
+end
+
+function BE.AdapterExampleStats:get_value(weapon_id)
+	if not self:is_available() then
+		return nil
+	end
+
+	local success, value = pcall(ExampleStats.get_value, ExampleStats, weapon_id)
+
+	return success and value or nil
+end
+```
+
+Tester le mod activé ne suffit pas : chaque global et méthode appelée doit être présent. `pcall` protège une API optionnelle susceptible de changer.
+
+**Étape 2 — consommer une capacité**
+
+```lua
+local value = BE.AdapterExampleStats:get_value(weapon.weapon_id)
+
+if value ~= nil then
+	table.insert(rows, {
+		name = "EXAMPLE",
+		value = tostring(value)
+	})
+end
+```
+
+Les lignes vanilla sont construites indépendamment de l'adaptateur.
+
+**Étape 3 — tester quatre états**
+
+Tester la dépendance absente, installée mais désactivée, activée avant le briefing, puis activée avec une méthode attendue manquante. Seul le contrat complet active l'intégration.
+
+### 11.7 Tutoriel : ajouter ou modifier une transaction
+
+L'état affiché par l'UI n'est jamais l'autorité de transaction. Toutes les conditions mutables sont relues dans la callback de confirmation :
+
+```lua
+params.yes_func = function()
+	local current = BE.ServiceExample:get_current_data(category, slot)
+
+	if not current or not BE.ServiceExample:can_apply(current, selected_id) then
+		managers.menu_component:post_event("menu_error")
+		return
+	end
+
+	BE.ServiceExample:apply(current, selected_id)
+	BE.ControllerExample:refresh()
+end
+```
+
+Employer une closure lorsque plusieurs valeurs doivent survivre jusqu'à la confirmation. La fonction globale `callback` de PAYDAY 2 ne capture qu'un paramètre fixe.
+
+Pour une pièce d'arme, conserver `category`, le `slot` fabriqué, `part_id` et `global_value`. Revérifier succès, milestone, contenu, compatibilité, quantité, prix et `get_modify_weapon_consequence` immédiatement avant `buy_and_modify_weapon`.
+
+### 11.8 Tutoriel : ajouter une donnée à l'éditeur d'armes
+
+1. Lire et valider la donnée brute dans `ServiceWeaponModification`.
+2. L'ajouter à la structure retournée par le service ; la vue ne doit pas interroger `managers.blackmarket`.
+3. Formater les valeurs calculées dans `PresenterWeaponStatistics`.
+4. Les rendre dans `ViewWeaponModification` avec les polices, couleurs et dimensions du safe rect.
+5. Après installation/retrait, relire le blueprint puis rafraîchir.
+6. Tester l'arme équipée et un slot fabriqué explicite non équipé.
+
+Pour une texture, préserver son ratio :
+
+```lua
+local scale = math.min(frame_w / texture_w, frame_h / texture_h)
+local width = texture_w * scale
+local height = texture_h * scale
+
+bitmap:set_size(width, height)
+bitmap:set_center(frame:center())
+```
+
+Ne jamais imposer simultanément la largeur et la hauteur de la frame à une image.
+
+### 11.9 Tutoriel : ajouter une action au clic droit
+
+1. Ajouter la détection et le routage à `ControllerWeaponContextMenu`.
+2. Vérifier que le briefing est actif, qu'aucun asset n'est affiché et que le blackscreen n'a pas commencé.
+3. Mettre à jour l'élément sélectionné de `NewLoadoutTab`.
+4. Déléguer à un nœud/callback vanilla sûr ou au contrôleur propriétaire.
+5. Retourner `true` uniquement après l'ouverture du menu contextuel.
+6. Appeler l'original pour chaque bouton, coordonnée ou élément non concerné.
+
+Conserver un ordre déterministe et ajouter Annuler en dernier :
+
+```lua
+local options = {
+	{
+		text = managers.localization:text("bbm_example_action"),
+		callback = function()
+			BE.ControllerExample:open()
+		end
+	}
+}
+
+table.insert(options, {
+	text = managers.localization:text("dialog_cancel"),
+	is_cancel_button = true
+})
+```
+
+### 11.10 Tutoriel : publier une mise à jour compatible BeardLib
+
+`main.xml` constitue l'unique déclaration de mise à jour :
+
+```xml
+<table name="Briefing Enhanced">
+	<AssetUpdates
+		id="57999"
+		provider="modworkshop"
+		version="1.10.0"
+		semantic_version="true"
+	/>
+</table>
+```
+
+Pour chaque publication :
+
+1. Choisir une version sémantique sans préfixe `v` dans le repository, par exemple `1.11.0`.
+2. Reporter exactement cette version dans `mod.txt` et `main.xml`.
+3. Publier cette version sur le mod ModWorkshop `57999`. BeardLib accepte le préfixe `v` renvoyé par ModWorkshop, mais les fichiers du repository restent normalisés.
+4. Construire un ZIP possédant un seul dossier racine `Briefing Build Menu/`, qui contient directement `mod.txt`, `main.xml`, la documentation et `lua/`.
+5. Conserver le remplacement complet par défaut. Ne pas définir `dont_delete="true"` : un ancien script Lua résiduel est plus dangereux qu'une installation propre.
+6. Ne jamais stocker les préférences utilisateur dans le dossier du mod, car il est remplacé. Employer `SavePath`.
+7. Installer l'ancienne version publique dans une copie de test, ouvrir le menu principal et vérifier que BeardLib détecte la nouvelle version.
+8. Confirmer le téléchargement, redémarrer PAYDAY 2 puis vérifier les fichiers installés et la version affichée.
+
+La vérification et la notification sont automatiques. Le téléchargement et l'installation restent confirmés par l'utilisateur. Ne pas appeler `BeardLib.Menus.Mods:ForceDownload` depuis le mod.
+
+### 11.11 Checklist de review
+
+Avant de considérer l'implémentation terminée :
+
+1. Vérifier que le dossier propriétaire et les types de composants correspondent à leurs responsabilités.
+2. Vérifier les IDs stables et gardes d'installation de chaque hook.
+3. Vérifier que les overrides délèguent hors de leur contexte exact.
+4. Vérifier le nettoyage normal, sur erreur et sur fermeture forcée de chaque session.
+5. Protéger tous les managers, globals, classes et panels selon leur cycle de vie.
+6. Vérifier les localisations et empêcher qu'un texte externe absent affiche `ERROR:`.
+7. Vérifier le parcours sans chaque dépendance optionnelle.
+8. Rechercher les logs de debug, la syntaxe Lua 5.2 et les modifications de dépendances partagées.
+9. Exécuter les lignes concernées de la matrice puis lire les nouveaux logs SuperBLT et Diesel.
+
+## 12. Matrice minimale de tests en jeu
+
+| Zone | Cas obligatoires | Résultat attendu |
 |---|---|---|
-| `lib/managers/menu/menucomponentmanager` | `weapon_modification/hook_menu_component.lua` | Charge le noyau et ajoute les méthodes create/close à `MenuComponentManager` |
-| `lib/managers/menu/missionbriefinggui` | `core/hook_bootstrap.lua` | Initialise en premier le namespace et les services partagés |
-| `lib/managers/menu/missionbriefinggui` | `weapon_inventory/hook_weapon_inventory.lua` | Charge le service/adaptateur d'inventaire et hooke `NewLoadoutTab` ou `LoadoutItem` |
-| `lib/managers/menu/playerinventorygui` | `weapon_inventory/hook_weapon_inventory.lua` | La même entrée détecte `RequiredScript` et hooke `PlayerInventoryGui` |
-| `lib/managers/menu/blackmarketgui` | `weapon_inventory/hook_weapon_inventory.lua` | La même entrée hooke le remplissage BlackMarket et la fin d'une vente |
-| `lib/managers/menu/blackmarketgui` | `outfit/hook_outfit.lua` | Retire prévisualisation/personnalisation seulement des onglets de tenue marqués du briefing |
-| `lib/managers/menu/missionbriefinggui` | `weapon_modification/hook_weapon_modification.lua` | Charge service, contrôleur, adaptateur/presenter de statistiques, composant et vue |
-| `lib/managers/menu/missionbriefinggui` | `build_transfer/hook_build_transfer.lua` | Charge l'adaptateur PD2Builder |
-| `lib/managers/menu/missionbriefinggui` | `compatibility/hook_ehi.lua` | Charge l'adaptateur EHI ; l'installation réelle attend la méthode EHI |
-| `lib/managers/menu/missionbriefinggui` | `briefing_menu/hook_mission_briefing.lua` | Charge le briefing, le contrôleur de tenue et hooke init/hide/close ainsi que la souris |
-| `lib/managers/menu/skilltreeguinew` | `skill_tree/hook_skill_tree.lua` | Charge le contrôleur et hooke légendes, entrée spéciale et fermeture |
-| `lib/managers/menu/specializationguinew` | `perk_deck/hook_perk_deck.lua` | Charge le contrôleur de perk deck et hooke la fermeture |
-| `lib/managers/chatmanager` | `compatibility/hook_chat.lua` | Charge l'adaptateur de chat et enregistre son callback d'initialisation du menu |
-| `lib/managers/localizationmanager` | `localization/localization_english.lua` | Enregistre tous les textes `bbm_*` |
+| Démarrage | Dépendances minimales ; toutes les options activées | Aucun load error ; BUILD visible |
+| Cycle BUILD | Ouvrir/fermer chaque action ; Back ; nœud indisponible | Aucun overlay, input ou blocage d'outfit résiduel |
+| Skills/perks | Ouvrir, modifier, fermer | Profil courant mis à jour ; briefing restauré |
+| Tenues/gants/armure | Équiper chaque type ; Back | Outfit actualisé ; aucun crash 3D |
+| Inventaire armes | Primaire/secondaire ; équiper ; acheter slot/arme ; vendre | Bonne catégorie, bon slot, économie vanilla |
+| Garde de vente | Dernière arme ; dernière arme déverrouillée | Action de vente absente |
+| Menus contextuels | Deux armes, armure et Cancel | Bon ordre ; entrées non ciblées intactes |
+| Éditeur | Arme équipée + slot explicite ; installer/remplacer/retirer | Blueprint, quantités et argent corrects |
+| Verrous | Succès, milestone, DLC/contenu, incompatibilité | Aucune transaction interdite |
+| UI éditeur | Plusieurs pages ; icônes larges/hautes ; description absente | Pagination/ratio corrects ; aucun `ERROR:` |
+| Statistiques | Pièce courante/sélectionnée ; MWS actif/inactif | Valeurs vanilla ; lignes optionnelles conditionnelles |
+| Drag and Drop | Absent/désactivé/actif ; move/swap/place/cancel | Repli sûr ; profils/bots cohérents |
+| HUD/chat | EHI et HUD/chat compatibles actifs/inactifs | Overlays restaurés ; chat utilisable |
+| Updater | BeardLib absent ; version distante égale/inférieure/supérieure ; Ignore Updates ; ZIP valide/invalide | Mod fonctionnel sans BeardLib ; seule une version sémantique supérieure est proposée ; une archive invalide ne remplace pas le mod |
+| Session | Hôte/client ; ready/unready ; retour menu | Aucun état résiduel ni exigence côté pair |
+| Rechargement | Redémarrage ; reload SuperBLT local si utilisé | Aucun hook/composant dupliqué |
 
-L'ordre des entrées `missionbriefinggui` est volontaire : le noyau et les classes des fonctionnalités sont chargés avant que `hook_mission_briefing.lua` crée le bouton capable de les appeler.
+Validations statiques :
 
-### Chaîne de chargement interne par fonctionnalité
-
-```text
-Menu BUILD
-hook_mission_briefing
-  ├─ factory_briefing_node
-  ├─ controller_briefing_menu
-  ├─ view_briefing_button
-  ├─ controller_skill_tree
-  ├─ controller_outfit
-  └─ controller_perk_deck
-
-Inventaire des armes
-hook_weapon_inventory
-  ├─ adapter_drag_drop_inventory
-  └─ service_weapon_inventory
-
-Modification des armes
-hook_weapon_modification
-  ├─ service_weapon_modification
-  ├─ controller_weapon_modification
-  ├─ adapter_more_weapon_stats
-  ├─ presenter_weapon_statistics
-  ├─ component_weapon_modification
-  └─ view_weapon_modification
-
-Chaque chaîne ci-dessus
-  └─ core/bootstrap
-       ├─ constants_briefing_enhanced
-       ├─ service_outfit
-       ├─ service_dialog
-       ├─ state_briefing_session
-       ├─ controller_menu_navigation
-       └─ facade_legacy
+```powershell
+Get-Content -Raw "Briefing Build Menu/mod.txt" | ConvertFrom-Json
+[xml](Get-Content -Raw "Briefing Build Menu/main.xml") | Out-Null
+rg -n "log\(|Application:error|io\.write|print\(" "Briefing Build Menu/lua"
+rg -n "BriefingBuildMenu_|bbm_" "Briefing Build Menu/lua"
 ```
 
-## 9. Dépendances
-
-### Dépendances obligatoires
-
-| Dépendance | Pourquoi elle est nécessaire |
-|---|---|
-| PAYDAY 2 | Fournit les classes de menus, BlackMarket, weapon factory et UI |
-| SuperBLT | Lit `mod.txt` et fournit `Hooks`, `QuickMenu` ainsi que le runtime du mod |
-| Syntaxe LuaJIT / Lua 5.1 | Runtime Lua de PAYDAY 2 ; la syntaxe Lua 5.2+ est invalide |
-
-BeardLib n'est **pas** requis par l'architecture actuelle.
-
-### Intégrations optionnelles
-
-| Mod/API optionnel | Détection | Fonction activée | Repli sûr |
-|---|---|---|---|
-| Drag and Drop Inventory | Mod BLT activé, global `DragDropInventory` et méthodes de managers requises | Déplacement/permutation dans les grilles d'armes | Équipement, achat et vente normaux |
-| More Weapon Stats | Mod BLT activé et API `MoreWeaponStats`/`Faker` initialisées | Lignes de statistiques supplémentaires | Statistiques vanilla |
-| PD2Builder loader | Mod BLT activé et méthodes `BuilderLoader.load_build`/`upload_build` | Entrées Import/Export | Entrées masquées |
-| Market Favorites | Ses hooks `BlackMarketGui` autonomes sont actifs | Actions de favori, badges `FAV` et tri dans les grilles réutilisées des armes, tenues et gants | Grilles BlackMarket vanilla |
-| EHI | Présence runtime de `MissionBriefingGui.AddXPBreakdown` | Masquage/restauration des éléments EHI | Aucune action propre à EHI |
-| API de traduction du chat | Présence runtime de `ChatTranslatorMessage` | Demande de traduction des messages reçus | Chat normal |
-
-Un adaptateur doit considérer l'absence d'une dépendance optionnelle comme un état normal, jamais comme une erreur. Ne pas appeler directement un global de mod optionnel depuis un contrôleur, service ou une vue.
-
-### Règle de direction des dépendances
-
-Les dépendances doivent suivre un seul sens :
-
-```text
-Hook PAYDAY 2 → Controller → Service → manager PAYDAY 2
-                            ↘ Presenter → View
-Hook/API d'un mod optionnel → Adapter ───↗
-```
-
-Un service ne doit pas savoir comment un bouton est dessiné. Une vue ne doit pas acheter, vendre ou installer directement un objet. Cette séparation permet de modifier une couche sans réécrire les autres.
-
-## 10. Cycle de vie d'une session de briefing
-
-`StateBriefingSession` délimite les nœuds custom et éditeurs de build ouverts depuis le briefing.
-
-```text
-L'utilisateur sélectionne une option
-  → ControllerMenuNavigation:open
-  → StateBriefingSession:begin
-  → sauvegarde de l'ancien blocage d'outfit
-  → ouverture du nœud dans kit_menu
-  → modification du build
-  → fermeture du composant vanilla/custom
-  → StateBriefingSession:finish
-  → restauration du blocage précédent
-  → mise à jour des informations d'outfit
-```
-
-Pendant l'ouverture, `Global.block_update_outfit_information` empêche le briefing de publier un loadout intermédiaire incomplet. Sa valeur précédente est mémorisée puis restaurée exactement. Un échec d'ouverture réinitialise immédiatement la session. Une ancienne valeur `opened_from_briefing` peut aussi être reprise après un rechargement SuperBLT.
-
-Les entrées de tenue et de gants constituent une exception volontaire. Le briefing possède un `MissionBriefingGui` et un `NewLoadoutTab`, pas un `PlayerInventoryGui`. `ControllerOutfit` ouvre le nœud vanilla `loadout` déjà présent dans le `kit_menu` : sa transition et son Retour restent donc autoritaires. Démarrer une seconde `StateBriefingSession` autour de ce parcours doublerait son cycle de vie et pourrait bloquer la publication de l'outfit.
-
-## 11. Parcours des fonctionnalités
-
-### 11.1 Bouton BUILD
-
-1. `MissionBriefingGui:init` est post-hooké.
-2. `FactoryBriefingNode:ensure_all()` enregistre les nœuds du mod dans le `kit_menu` actif.
-3. `ViewBriefingButton:create()` retire l'ancien bouton remplacé et crée `BUILD`.
-4. Les overrides souris ne consomment l'entrée que lorsque le pointeur se trouve sur ce bouton.
-5. `ControllerBriefingMenu:show()` ouvre un `QuickMenu` contenant les fonctionnalités disponibles.
-
-Fichiers traversés : `hook_mission_briefing.lua` → `factory_briefing_node.lua` / `view_briefing_button.lua` → `controller_briefing_menu.lua`.
-
-### 11.2 Arbre de compétences et perk deck
-
-Les contrôleurs vérifient les nœuds, commencent une session puis ouvrent les composants vanilla :
-
-- `skilltree_new` crée `NewSkillTreeGui` ;
-- `skilltree` crée `SpecializationGuiNew` dans la version actuelle du jeu.
-
-Le changement de skill set est bloqué uniquement lorsque l'arbre a été ouvert depuis le briefing. La fermeture de chaque écran termine la session correspondante et synchronise l'outfit courant.
-
-Chaîne d'appel de l'arbre de compétences :
-
-```text
-Option de ControllerBriefingMenu
-  → ControllerSkillTree:open                         (controller_skill_tree.lua)
-  → FactoryBriefingNode:ensure_all                   (factory_briefing_node.lua)
-  → ControllerMenuNavigation:open("skilltree", ...)  (controller_menu_navigation.lua)
-  → managers.menu:open_node
-  → NewSkillTreeGui
-  → PostHook de close                                (hook_skill_tree.lua)
-  → StateBriefingSession:finish
-```
-
-Le perk deck suit la même chaîne avec `controller_perk_deck.lua`, `SpecializationGuiNew` et `hook_perk_deck.lua`.
-
-### 11.3 Tenues et gants
-
-`ControllerBriefingMenu` expose deux entrées distinctes avec les libellés localisés du jeu. `ServiceOutfitMenu` crée deux définitions d'onglets BlackMarket standard avec `populate_player_styles` et `populate_gloves` ; `ControllerOutfit` sélectionne l'onglet 1 ou 2 et ouvre le nœud `loadout` existant.
-
-Le `BlackMarketGui` réutilisé conserve le remplissage des cellules et les callbacks d'équipement vanilla. Dans ce contexte marqué, le hook retire `trd_preview`, `trd_customize`, `hnd_preview` et `hnd_customize` de BeardLib, car ces actions exigent une prévisualisation 3D indisponible ou un nœud de personnalisation absent du `kit_menu`. Les actions d'équipement, de DLC et de favoris restent disponibles.
-
-L'intégration de Market Favorites est passive et optionnelle. Lorsqu'il est installé, ses hooks existants sur `populate_player_styles` et `populate_gloves` décorent automatiquement ces grilles réutilisées. Briefing Enhanced ne détecte pas Market Favorites et n'appelle pas son namespace ; chaque mod reste donc utilisable seul.
-
-### 11.4 Sélection, achat et vente d'armes
-
-La fonctionnalité d'inventaire n'est active que si le menu courant est `kit_menu` et si le contexte interne vise `primaries` ou `secondaries`.
-
-1. `PlayerInventoryGui`, `NewLoadoutTab` ou l'ancien `LoadoutItem` identifie la catégorie sélectionnée.
-2. `ServiceWeaponInventory` active les actions vanilla appropriées.
-3. Les emplacements vides déverrouillés reçoivent `ew_buy` ; les emplacements verrouillés reçoivent `ew_unlock` si le joueur peut payer.
-4. Les armes possédées reçoivent les actions d'équipement et de vente, tout en protégeant la dernière arme utilisable.
-5. `BlackMarketGui` conserve les listes, prix, blocages DLC et confirmations vanilla.
-6. Les actions de prévisualisation 3D dangereuses sont retirées uniquement dans ce contexte de briefing.
-7. Après une vente, les informations d'outfit sont synchronisées.
-
-Le même `hook_weapon_inventory.lua` est volontairement enregistré sur trois scripts du jeu. `RequiredScript` sélectionne uniquement la branche correspondante : création du briefing/loadout, sélection de catégorie dans `PlayerInventoryGui`, ou construction des actions dans `BlackMarketGui`. Toutes les règles d'action sont centralisées dans `service_weapon_inventory.lua` ; le hook doit seulement capturer le contexte et transmettre les données du jeu au service.
-
-### 11.5 Drag and Drop Inventory
-
-`AdapterDragDropInventory` n'active l'intégration que si la dépendance est installée, activée et expose toutes les API nécessaires. Le mod laisse alors la dépendance gérer la prise, le placement et les permutations compatibles avec les profils. Briefing Enhanced ne duplique pas cette logique. Sans la dépendance, l'achat et la vente continuent de fonctionner.
-
-L'adaptateur est chargé par `hook_weapon_inventory.lua`. `ServiceWeaponInventory` appelle `AdapterDragDropInventory:is_available()` lors de la création des actions. Si elle est disponible, le hook retire le marqueur réservé au loadout du nœud d'armes du briefing afin que les handlers existants de la dépendance puissent traiter la grille.
-
-### 11.6 Modifications d'armes
-
-Les modifications utilisent un composant 2D dédié enregistré sur `MenuComponentManager`.
-
-1. Le joueur choisit l'arme principale ou secondaire équipée.
-2. `ControllerWeaponModification` ouvre le nœud custom du `kit_menu`.
-3. `ServiceWeaponModification` lit l'arme fabriquée équipée et appelle `get_dropable_mods_by_weapon_id` une fois par rafraîchissement.
-4. Il regroupe les pièces compatibles par type et conserve leur `global_value`, quantité, prix, conflit, statut par défaut et cosmétique.
-5. `ComponentWeaponModification` gère sélection, onglets, pages, entrées souris/manette et rafraîchissements.
-6. Les méthodes de vue dessinent la grille, le détail de la pièce et les statistiques sans prévisualisation 3D.
-7. L'installation ou le retrait passe par les confirmations et transactions BlackMarket vanilla.
-8. Le blueprint est relu après la mutation. Une modification refusée affiche une erreur au lieu de supposer sa réussite.
-9. L'outfit et l'interface sont rafraîchis.
-
-La création de l'UI possède deux moments d'entrée distincts. `hook_menu_component.lua` s'exécute lorsque `MenuComponentManager` existe et déclare les callbacks create/close. Plus tard, `hook_weapon_modification.lua` s'exécute avec le briefing et charge la vraie classe du composant. `FactoryBriefingNode` relie les deux avec l'ID stable du composant. Cette séparation empêche une callback de viser une méthode du manager qui n'a pas encore été déclarée.
-
-Le composant reste enregistré sous l'ID historique `bbm_weapon_modifications`. Les anciennes méthodes du manager et le global `BriefingWeaponModificationsGui` restent des alias de compatibilité.
-
-### 11.7 Statistiques d'armes
-
-`PresenterWeaponStatistics` construit un aperçu sans modifier le vrai blueprint. Les colonnes vanilla `TOTAL / BASE / MOD / SKILL` proviennent de `WeaponDescription._get_stats`.
-
-`AdapterMoreWeaponStats` n'est utilisé que si More Weapon Stats est installé, activé et complètement initialisé. Ses lignes optionnelles sont calculées avec son API `Faker`. Si une API requise manque, l'interface reste fonctionnelle avec les statistiques vanilla uniquement.
-
-Chemin des données : pièce sélectionnée dans `ComponentWeaponModification` → `PresenterWeaponStatistics:get_data()` → `WeaponDescription._get_stats` vanilla plus `AdapterMoreWeaponStats:get_rows()` optionnel → rendu dans `view_weapon_modification.lua`.
-
-### 11.8 PD2Builder
-
-`AdapterPd2Builder` vérifie que **PD2Builder loader** est activé et que `BuilderLoader` expose les méthodes attendues. Import et Export n'apparaissent dans `BUILD` que si ces vérifications réussissent. Un post-hook sur `BuilderLoader:set_build` rafraîchit l'outfit après un import.
-
-`hook_build_transfer.lua` charge uniquement l'adaptateur. `ControllerBriefingMenu` vérifie sa disponibilité lors de la construction du QuickMenu : activer ou désactiver la dépendance change donc l'affichage des entrées sans dupliquer la logique du menu.
-
-### 11.9 EHI et chat
-
-- `AdapterEhi` détecte la méthode d'aperçu d'XP ajoutée tardivement par EHI, l'entoure de pre/post-hooks et masque temporairement les éléments capturés pendant l'ouverture d'un écran de build.
-- `AdapterChat` conserve l'accès au chat dans le parcours custom et demande optionnellement une traduction si l'API correspondante existe.
-
-Les deux adaptateurs sont optionnels et idempotents.
-
-## 12. Politique de compatibilité
-
-Le nom affiché est **Briefing Enhanced**, mais le dossier physique reste `Briefing Build Menu` afin de ne pas casser les installations existantes.
-
-Les surfaces suivantes sont volontairement conservées :
-
-- alias de namespace `BriefingBuildMenu` ;
-- anciens IDs de hooks et clés de localisation ;
-- anciens IDs de nœuds et composants ;
-- méthodes marquées `Compatibility facade` ;
-- `BriefingWeaponModificationsGui` ;
-- `create_bbm_weapon_modifications` et `close_bbm_weapon_modifications`.
-
-Le nouveau code doit utiliser `BriefingEnhanced` et les modules typés. Les façades de compatibilité doivent seulement déléguer et ne pas contenir de nouvelle logique métier.
-
-## 13. Comment faire évoluer le mod
-
-### 13.1 Trouver le bon fichier de départ
-
-| Modification souhaitée | Commencer la lecture ici | Modifier généralement aussi |
-|---|---|---|
-| Ajouter ou réordonner une option BUILD | `briefing_menu/controller_briefing_menu.lua` | Localisation et éventuellement un nouveau contrôleur |
-| Modifier l'apparence/position de BUILD | `briefing_menu/view_briefing_button.lua` | Constantes partagées si la valeur est réutilisée |
-| Ajouter un nœud de menu | `briefing_menu/factory_briefing_node.lua` | Contrôleur d'ouverture et méthodes create/close du composant |
-| Modifier le cycle ouverture/fermeture | `core/state_briefing_session.lua` et `controller_menu_navigation.lua` | Hook de fermeture de la fonctionnalité |
-| Modifier les règles d'achat/vente | `weapon_inventory/service_weapon_inventory.lua` | Hook routé seulement si une autre méthode du jeu est nécessaire |
-| Modifier les pièces disponibles ou transactions | `weapon_modification/service_weapon_modification.lua` | Contrôleur/composant uniquement si l'interaction change |
-| Modifier la disposition de l'écran | `weapon_modification/view_weapon_modification.lua` | Composant pour un nouvel état ou une nouvelle entrée |
-| Ajouter une statistique affichée | `weapon_modification/presenter_weapon_statistics.lua` | Vue ou adaptateur optionnel |
-| Intégrer un autre mod | Nouveau `adapter_<mod>.lua` dans la fonctionnalité propriétaire | Hook d'entrée et vérification de disponibilité |
-| Ajouter un texte affiché | `localization/localization_english.lua` | Nouvelle clé stable `bbm_*` dans le consommateur |
-
-### 13.2 Tutoriel : ajouter une option dans BUILD
-
-Supposons qu'une nouvelle fonctionnalité doive ouvrir un écran custom.
-
-1. Créer `lua/<fonctionnalité>/controller_<fonctionnalité>.lua`.
-2. Définir `BriefingEnhanced.ControllerFeature = ... or {}` et une méthode `open()`.
-3. Si un nœud est requis, ajouter un ID stable dans `ConstantsBriefingEnhanced.NODE_NAMES`.
-4. Enregistrer ce nœud dans `FactoryBriefingNode:ensure_all()`.
-5. Dans `open()`, appeler `ControllerMenuNavigation:open(screen_name, node_name)` pour centraliser le cycle de session.
-6. Charger le contrôleur depuis un `hook_<fonctionnalité>.lua` adapté ou avant son utilisation par `controller_briefing_menu.lua`.
-7. Ajouter l'option et sa callback dans `ControllerBriefingMenu:show()`.
-8. Ajouter la clé de localisation anglaise `bbm_*`.
-9. S'assurer que le composant ou écran vanilla appelle `StateBriefingSession:finish(screen_name)` à sa fermeture.
-10. Tester ouverture, retour, ouvertures répétées et fermeture forcée du briefing.
-
-Ne pas appeler directement `managers.menu:open_node` depuis la callback du QuickMenu. Le passage par `ControllerMenuNavigation` évite qu'un échec d'ouverture laisse BUILD bloqué.
-
-### 13.3 Tutoriel : ajouter une intégration optionnelle
-
-1. Placer toute la connaissance de l'API tierce dans `adapter_<mod>.lua`.
-2. Implémenter `is_available()` avec l'état BLT activé et la présence exacte des globals/méthodes nécessaires.
-3. Rendre chaque méthode publique de l'adaptateur inoffensive si la dépendance manque.
-4. Charger l'adaptateur avant le contrôleur ou la vue qui peut l'appeler.
-5. Conserver la fonctionnalité de base utilisable sans cette dépendance.
-6. Tester quatre situations : absent, installé mais désactivé, activé mais pas encore initialisé, complètement disponible.
-
-Ne pas mémoriser définitivement « indisponible » lorsqu'un autre mod peut s'initialiser plus tard. EHI sert de référence pour une API tardive à retenter ; PD2Builder sert de référence pour la détection d'un mod BLT activé.
-
-### 13.4 Tutoriel : ajouter un état ou une interaction UI
-
-1. Stocker sélection, page et état d'entrée dans `ComponentWeaponModification`.
-2. Ajouter une petite méthode qui modifie cet état et renvoie `true` uniquement si l'entrée est consommée.
-3. Appeler `_rebuild()` après un changement visible.
-4. Dessiner le résultat dans `view_weapon_modification.lua`.
-5. Conserver les mutations économiques dans `ServiceWeaponModification`.
-6. Vérifier `alive(panel)` pour les objets susceptibles d'être détruits pendant une transition de menu.
-
-### 13.5 Tutoriel : hooker une autre classe PAYDAY 2
-
-1. Trouver la méthode dans un dump PAYDAY 2 actuel et vérifier paramètres et valeur de retour.
-2. Ajouter le chemin du script du jeu comme `hook_id` dans `mod.txt`.
-3. Créer ou réutiliser un fichier d'entrée `hook_<fonctionnalité>.lua`.
-4. Charger le noyau en premier, puis uniquement les modules nécessaires dans ce contexte.
-5. Préférer `PostHook` pour réagir après le jeu et `PreHook` pour préparer les données avant lui.
-6. Utiliser `OverrideFunction` seulement pour consommer une entrée ou modifier le retour ; sauvegarder et rappeler `Hooks:GetFunction` dans les autres cas.
-7. Donner au hook un ID stable et unique globalement.
-8. Protéger l'installation avec un drapeau de hook si l'entrée peut être chargée plusieurs fois.
-
-### 13.6 Liste de contrôle d'une modification sûre
-
-Avant l'édition :
-
-- suivre le `hook_id` concerné depuis `mod.txt` jusqu'au fichier d'entrée ;
-- identifier la couche propriétaire du comportement ;
-- inspecter la méthode vanilla et les mods locaux qui hookent la même méthode.
-
-Pendant l'édition :
-
-- employer la syntaxe Lua 5.1 ;
-- préserver `ModPath` dans une locale ou `BriefingEnhanced.ModPath` avant une callback différée ;
-- protéger les objets dépendants du cycle de vie ;
-- conserver les dépendances optionnelles derrière leurs adaptateurs ;
-- préserver les IDs historiques sauf migration explicite ;
-- ne jamais ajouter la fonctionnalité dans `base/`, BeardLib ou un autre mod.
-
-Après l'édition :
-
-- valider `mod.txt` comme JSON strict ;
-- vérifier l'existence de chaque `script_path` et cible de `dofile` ;
-- rechercher les doublons d'IDs de hooks et logs temporaires ;
-- tester la fonctionnalité avec chaque intégration optionnelle activée et désactivée ;
-- lire les derniers logs SuperBLT et Diesel.
-
-### 13.7 Diagnostic selon le symptôme
-
-| Symptôme | Premiers fichiers/objets à inspecter |
-|---|---|
-| Le mod ne se charge jamais | `mod.txt`, `hook_id`, `script_path` d'entrée et log SuperBLT |
-| BUILD n'apparaît pas | `hook_mission_briefing.lua`, `MissionBriefingGui:init`, `ViewBriefingButton` |
-| BUILD apparaît mais ne se clique pas | Overrides souris, limites du bouton, `gui._enabled`, garde du blackscreen |
-| Une option affiche `ERROR: <ID>` | `localization_english.lua` et clé `bbm_*` exacte |
-| Un écran ne s'ouvre pas | `FactoryBriefingNode`, `kit_menu` actif, `ControllerMenuNavigation` |
-| BUILD reste bloqué après Retour | Hook de fermeture, `StateBriefingSession:finish`, callback close du composant |
-| Une pièce est listée mais pas installée | Arguments de transaction, `global_value`, disponibilité et blueprint relu |
-| L'atelier crashe sur `menu_scene` | Un chemin 3D a été ouvert depuis le briefing ; conserver le composant 2D |
-| Une fonction marche seulement avec un autre mod | Frontière de l'adaptateur ou global tiers non protégé |
-
-## 14. Matrice minimale de tests en jeu
-
-- Démarrer le jeu et rejoindre un lobby sans erreur.
-- Ouvrir et fermer `BUILD` plusieurs fois.
-- Ouvrir l'arbre de compétences et le perk deck, appliquer une modification et revenir.
-- Ouvrir les tenues et les gants depuis `BUILD`, équiper un élément, revenir puis répéter.
-- Répéter le test des tenues et des gants avec Market Favorites activé puis désactivé.
-- Équiper, acheter et vendre des armes principales et secondaires.
-- Répéter les tests d'inventaire avec Drag and Drop Inventory activé puis désactivé.
-- Installer, remplacer et retirer des pièces ; tester pagination, souris et manette.
-- Répéter les statistiques avec More Weapon Stats activé puis désactivé.
-- Répéter l'import/export avec PD2Builder activé puis désactivé.
-- Revenir au menu principal, rejoindre un autre lobby et vérifier BUILD ainsi que les mises à jour d'outfit.
-- Lire le dernier log SuperBLT et le crash log Diesel après les tests.
+Les tests en jeu restent obligatoires : les contrôles statiques ne reproduisent pas le cycle de vie des menus Diesel.

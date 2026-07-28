@@ -4,6 +4,38 @@ local BE = BriefingEnhanced
 
 BE.ServiceWeaponModification = BE.ServiceWeaponModification or {}
 
+local DESCRIPTION_PART_TYPES = {
+	ammo = true,
+	bayonet = true,
+	bipod = true,
+	gadget = true,
+	underbarrel_ammo = true
+}
+
+local function has_description(factory_tweak)
+	if not factory_tweak then
+		return false
+	end
+
+	if factory_tweak.has_description == true or DESCRIPTION_PART_TYPES[factory_tweak.type] then
+		return true
+	end
+
+	for _, perk in ipairs(factory_tweak.perks or {}) do
+		if DESCRIPTION_PART_TYPES[perk] then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function is_valid_description(description)
+	return type(description) == "string"
+		and description ~= ""
+		and not string.find(description, "^ERROR:%s*")
+end
+
 local function get_equipped_part(weapon, part_type)
 	for _, part_id in ipairs(weapon.crafted.blueprint or {}) do
 		local part_tweak = tweak_data.weapon.factory.parts[part_id]
@@ -54,6 +86,35 @@ local function get_cosmetic_part(weapon, part_type)
 	end
 end
 
+local function is_weapon_part_achievement_locked(part_id)
+	local dlc_manager = managers.dlc
+
+	if not dlc_manager then
+		-- Fail closed: installing a part is unsafe when its unlock state cannot
+		-- be verified.
+		return true
+	end
+
+	if dlc_manager.is_weapon_mod_achievement_locked
+		and dlc_manager:is_weapon_mod_achievement_locked(part_id) then
+		return true
+	end
+
+	if dlc_manager.is_weapon_mod_achievement_milestone_locked
+		and dlc_manager:is_weapon_mod_achievement_milestone_locked(part_id) then
+		return true
+	end
+
+	if dlc_manager.is_content_achievement_locked
+		and dlc_manager:is_content_achievement_locked("weapon_mods", part_id) then
+		return true
+	end
+
+	return dlc_manager.is_content_achievement_milestone_locked
+		and dlc_manager:is_content_achievement_milestone_locked("weapon_mods", part_id)
+		or false
+end
+
 local function build_part_data(weapon, raw_part, equipped_part, default_part, cosmetic_part)
 	local part_id = raw_part[1]
 	local global_value = raw_part[2] or "normal"
@@ -67,9 +128,12 @@ local function build_part_data(weapon, raw_part, equipped_part, default_part, co
 	local is_default = part_id == default_part
 	local is_cosmetic = part_id == cosmetic_part
 	local no_consume = is_cosmetic or part_tweak.is_a_unlockable == true
-	local amount = (is_default or no_consume)
+	local amount = (is_default or is_cosmetic)
 		and 1
 		or managers.blackmarket:get_item_amount(global_value, "weapon_mods", part_id, true)
+	local achievement_locked = not (is_default or is_cosmetic)
+		and is_weapon_part_achievement_locked(part_id)
+		or false
 	local conflict_part = managers.blackmarket:can_modify_weapon(weapon.category, weapon.slot, part_id)
 	local can_modify = conflict_part == nil
 	local price = managers.money:get_weapon_modify_price(weapon.crafted.weapon_id, part_id, global_value) or 0
@@ -82,7 +146,8 @@ local function build_part_data(weapon, raw_part, equipped_part, default_part, co
 		equipped = part_id == equipped_part,
 		default_part = default_part,
 		no_consume = no_consume,
-		available = amount > 0 and can_modify and can_afford,
+		achievement_locked = achievement_locked,
+		available = not achievement_locked and amount > 0 and can_modify and can_afford,
 		amount = amount,
 		can_modify = can_modify,
 		conflict_part = conflict_part,
@@ -91,12 +156,26 @@ local function build_part_data(weapon, raw_part, equipped_part, default_part, co
 	}
 end
 
-function BE.ServiceWeaponModification:get_equipped_weapon(category)
+local function get_current_part_data(weapon, part_type, part)
+	if not (weapon and type(part) == "table" and part.id) then
+		return nil
+	end
+
+	return build_part_data(
+		weapon,
+		{ part.id, part.global_value },
+		get_equipped_part(weapon, part_type),
+		get_default_part(weapon, part_type),
+		get_cosmetic_part(weapon, part_type)
+	)
+end
+
+function BE.ServiceWeaponModification:get_weapon(category, slot)
 	if category ~= "primaries" and category ~= "secondaries" then
 		return nil
 	end
 
-	local slot = managers.blackmarket:equipped_weapon_slot(category)
+	slot = slot or managers.blackmarket:equipped_weapon_slot(category)
 	local crafted_weapons = managers.blackmarket:get_crafted_category(category)
 	local weapon = crafted_weapons and crafted_weapons[slot]
 
@@ -110,6 +189,51 @@ function BE.ServiceWeaponModification:get_equipped_weapon(category)
 		crafted = weapon,
 		name = managers.blackmarket:get_weapon_name_by_category_slot(category, slot)
 	}
+end
+
+function BE.ServiceWeaponModification:get_equipped_weapon(category)
+	return self:get_weapon(category)
+end
+
+function BE.ServiceWeaponModification:get_part_description(weapon, part)
+	if not (weapon and weapon.crafted and type(part) == "table" and part.id) then
+		return ""
+	end
+
+	local factory_tweak = tweak_data.weapon.factory.parts[part.id]
+
+	if not has_description(factory_tweak) then
+		return ""
+	end
+
+	local weapon_factory = managers.weapon_factory
+
+	if weapon_factory and weapon_factory.get_part_desc_by_part_id_from_weapon then
+		local success, description = pcall(
+			weapon_factory.get_part_desc_by_part_id_from_weapon,
+			weapon_factory,
+			part.id,
+			weapon.crafted.factory_id,
+			weapon.crafted.blueprint or {}
+		)
+
+		if success and is_valid_description(description) then
+			return description
+		end
+	end
+
+	local part_tweak = tweak_data.blackmarket.weapon_mods[part.id]
+	local description_id = part_tweak and part_tweak.desc_id
+	local localization = managers.localization
+
+	if description_id
+		and localization
+		and localization.exists
+		and localization:exists(description_id) then
+		return localization:text(description_id)
+	end
+
+	return ""
 end
 
 function BE.ServiceWeaponModification:get_part_types(mods_by_type)
@@ -154,8 +278,8 @@ function BE.ServiceWeaponModification:get_parts(weapon, part_type, mods_by_type)
 	return parts
 end
 
-function BE.ServiceWeaponModification:get_data(category)
-	local weapon = self:get_equipped_weapon(category)
+function BE.ServiceWeaponModification:get_data(category, slot)
+	local weapon = self:get_weapon(category, slot)
 
 	if not weapon then
 		return nil
@@ -179,53 +303,58 @@ function BE.ServiceWeaponModification:get_data(category)
 	return data
 end
 
-function BE.ServiceWeaponModification:confirm_install(category, part_type, part)
-	local weapon = self:get_equipped_weapon(category)
+function BE.ServiceWeaponModification:confirm_install(category, part_type, part, slot)
+	local weapon = self:get_weapon(category, slot)
+	local current_part = get_current_part_data(weapon, part_type, part)
 
-	if not weapon or type(part) ~= "table" or not part.id then
+	if not (weapon and current_part and current_part.available and not current_part.equipped) then
+		if managers.menu_component then
+			managers.menu_component:post_event("menu_error")
+		end
+
+		BE.ControllerWeaponModification:refresh()
 		return
 	end
 
-	local replaces, removes = managers.blackmarket:get_modify_weapon_consequence(category, weapon.slot, part.id)
+	local replaces, removes = managers.blackmarket:get_modify_weapon_consequence(category, weapon.slot, current_part.id)
 	local params = {
-		name = part.name,
+		name = current_part.name,
 		category = category,
 		slot = weapon.slot,
 		factory_id = weapon.crafted.factory_id,
 		weapon_name = managers.weapon_factory:get_weapon_name_by_factory_id(weapon.crafted.factory_id),
 		add = true,
-		money = part.price > 0 and managers.experience:cash_string(part.price),
+		money = current_part.price > 0 and managers.experience:cash_string(current_part.price),
 		replaces = replaces or {},
 		removes = removes or {},
 		yes_func = function()
-			self:install(category, part_type, part)
+			self:install(category, part_type, current_part, weapon.slot)
 		end,
 		no_func = function() end
 	}
 
-	if part.default_part then
-		table.delete(params.replaces, part.default_part)
-		table.delete(params.removes, part.default_part)
+	if current_part.default_part then
+		table.delete(params.replaces, current_part.default_part)
+		table.delete(params.removes, current_part.default_part)
 	end
 
 	managers.menu:show_confirm_blackmarket_mod(params)
 end
 
-function BE.ServiceWeaponModification:install(category, part_type, part)
+function BE.ServiceWeaponModification:install(category, part_type, part, slot)
 	if type(part) ~= "table" or not part.id then
 		return
 	end
 
-	local weapon = self:get_equipped_weapon(category)
-	local current_part = weapon and build_part_data(
-		weapon,
-		{ part.id, part.global_value },
-		get_equipped_part(weapon, part_type),
-		part.default_part,
-		get_cosmetic_part(weapon, part_type)
-	)
+	local weapon = self:get_weapon(category, slot)
+	local current_part = get_current_part_data(weapon, part_type, part)
 
-	if not (weapon and current_part and current_part.available) then
+	if not (weapon and current_part and current_part.available and not current_part.equipped) then
+		if managers.menu_component then
+			managers.menu_component:post_event("menu_error")
+		end
+
+		BE.ControllerWeaponModification:refresh()
 		return
 	end
 
@@ -239,7 +368,7 @@ function BE.ServiceWeaponModification:install(category, part_type, part)
 		current_part.no_consume
 	)
 
-	weapon = self:get_equipped_weapon(category)
+	weapon = self:get_weapon(category, slot)
 	local installed = weapon and table.contains(weapon.crafted.blueprint or {}, part.id)
 
 	if not installed then
@@ -260,8 +389,8 @@ function BE.ServiceWeaponModification:install(category, part_type, part)
 	BE.ControllerWeaponModification:refresh()
 end
 
-function BE.ServiceWeaponModification:confirm_remove(category, part_type, part)
-	local weapon = self:get_equipped_weapon(category)
+function BE.ServiceWeaponModification:confirm_remove(category, part_type, part, slot)
+	local weapon = self:get_weapon(category, slot)
 
 	if not weapon or type(part) ~= "table" or not part.id or part.id == part.default_part then
 		return
@@ -280,7 +409,7 @@ function BE.ServiceWeaponModification:confirm_remove(category, part_type, part)
 		replaces = replaces or {},
 		removes = removes or {},
 		yes_func = function()
-			self:remove(category, part_type, part)
+			self:remove(category, part_type, part, weapon.slot)
 		end,
 		no_func = function() end
 	}
@@ -288,12 +417,12 @@ function BE.ServiceWeaponModification:confirm_remove(category, part_type, part)
 	managers.menu:show_confirm_blackmarket_mod(params)
 end
 
-function BE.ServiceWeaponModification:remove(category, part_type, part)
+function BE.ServiceWeaponModification:remove(category, part_type, part, slot)
 	if type(part) ~= "table" or not part.id then
 		return
 	end
 
-	local weapon = self:get_equipped_weapon(category)
+	local weapon = self:get_weapon(category, slot)
 
 	if not weapon or get_equipped_part(weapon, part_type) ~= part.id then
 		return
@@ -318,7 +447,7 @@ function BE.ServiceWeaponModification:remove(category, part_type, part)
 		managers.blackmarket:remove_weapon_part(category, weapon.slot, part.global_value, part.id)
 	end
 
-	weapon = self:get_equipped_weapon(category)
+	weapon = self:get_weapon(category, slot)
 	local removed = weapon and not table.contains(weapon.crafted.blueprint or {}, part.id)
 	local default_restored = not part.default_part
 		or (weapon and table.contains(weapon.crafted.blueprint or {}, part.default_part))
@@ -344,8 +473,8 @@ function BE:get_equipped_weapon(category)
 	return self.ServiceWeaponModification:get_equipped_weapon(category)
 end
 
-function BE:get_weapon_modification_data(category)
-	return self.ServiceWeaponModification:get_data(category)
+function BE:get_weapon_modification_data(category, slot)
+	return self.ServiceWeaponModification:get_data(category, slot)
 end
 
 function BE:get_weapon_part_types(weapon)
@@ -366,18 +495,18 @@ function BE:get_weapon_parts(weapon, part_type)
 	return self.ServiceWeaponModification:get_parts(weapon, part_type, mods_by_type)
 end
 
-function BE:confirm_install_weapon_part(category, part_type, part)
-	return self.ServiceWeaponModification:confirm_install(category, part_type, part)
+function BE:confirm_install_weapon_part(category, part_type, part, slot)
+	return self.ServiceWeaponModification:confirm_install(category, part_type, part, slot)
 end
 
-function BE:confirm_remove_weapon_part(category, part_type, part)
-	return self.ServiceWeaponModification:confirm_remove(category, part_type, part)
+function BE:confirm_remove_weapon_part(category, part_type, part, slot)
+	return self.ServiceWeaponModification:confirm_remove(category, part_type, part, slot)
 end
 
-function BE:install_weapon_part(category, part_type, part)
-	return self.ServiceWeaponModification:install(category, part_type, part)
+function BE:install_weapon_part(category, part_type, part, slot)
+	return self.ServiceWeaponModification:install(category, part_type, part, slot)
 end
 
-function BE:remove_weapon_part(category, part_type, part)
-	return self.ServiceWeaponModification:remove(category, part_type, part)
+function BE:remove_weapon_part(category, part_type, part, slot)
+	return self.ServiceWeaponModification:remove(category, part_type, part, slot)
 end

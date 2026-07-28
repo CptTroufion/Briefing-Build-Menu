@@ -12,15 +12,18 @@ local COLORS = tweak_data.screen_colors
 local COLUMNS = Constants.WEAPON_MODIFICATION_COLUMNS
 local ROWS = Constants.WEAPON_MODIFICATION_ROWS
 local PAGE_SIZE = COLUMNS * ROWS
+local STATS_SIDEBAR_MIN_WIDTH = 380
+local STATS_SIDEBAR_WIDTH_RATIO = 0.3
+local STATS_SIDEBAR_MAX_WIDTH_RATIO = 0.4
 
 local function upper(text)
 	return utf8.to_upper(text or "")
 end
 
-local function fit_text(text)
+local function fit_text(text, max_width)
 	local _, _, width, height = text:text_rect()
 
-	text:set_size(math.min(width, text:parent():w()), height)
+	text:set_size(math.min(width, max_width or text:parent():w()), height)
 end
 
 local function get_part_icon(part_id)
@@ -34,6 +37,30 @@ local function get_part_icon(part_id)
 	return path .. "textures/pd2/blackmarket/icons/mods/" .. part_id
 end
 
+local function fit_bitmap_in_frame(bitmap, x, y, width, height)
+	if not alive(bitmap) then
+		return
+	end
+
+	local texture_width = bitmap:texture_width()
+	local texture_height = bitmap:texture_height()
+
+	if texture_width > 0 and texture_height > 0 and width > 0 and height > 0 then
+		local frame_aspect = width / height
+		local scaled_width = math.max(texture_width, texture_height * frame_aspect)
+		local scaled_height = math.max(texture_height, texture_width / frame_aspect)
+
+		bitmap:set_size(
+			math.round(texture_width / scaled_width * width),
+			math.round(texture_height / scaled_height * height)
+		)
+	else
+		bitmap:set_size(width, height)
+	end
+
+	bitmap:set_center(x + width * 0.5, y + height * 0.5)
+end
+
 function Component:_rebuild()
 	self._panel:clear()
 	self._cells = {}
@@ -44,6 +71,12 @@ function Component:_rebuild()
 
 	local width, height = self._panel:w(), self._panel:h()
 	local margin = 32
+	local stats_width = math.min(
+		math.max(STATS_SIDEBAR_MIN_WIDTH, math.floor(width * STATS_SIDEBAR_WIDTH_RATIO)),
+		math.floor(width * STATS_SIDEBAR_MAX_WIDTH_RATIO)
+	)
+	local stats_x = width - stats_width - margin
+	local grid_width = stats_x - margin * 2
 	local title = self._panel:text({
 		text = managers.localization:text("bbm_blackmarket_title", {
 			WEAPON = upper(self._data.weapon.name)
@@ -56,7 +89,7 @@ function Component:_rebuild()
 		y = 12
 	})
 
-	fit_text(title)
+	fit_text(title, grid_width)
 
 	local weapon_name = self._panel:text({
 		text = upper(managers.localization:text(
@@ -69,7 +102,7 @@ function Component:_rebuild()
 		y = title:bottom() + 2
 	})
 
-	fit_text(weapon_name)
+	fit_text(weapon_name, grid_width)
 
 	local tab_y = math.floor(height * 0.56)
 	local tabs_top = tab_y
@@ -81,7 +114,7 @@ function Component:_rebuild()
 		local label = upper(managers.localization:text("bm_menu_" .. part_type))
 		local estimated_width = string.len(label) * 11 + 18
 
-		if tab_x + estimated_width > width - margin then
+		if tab_x + estimated_width > margin + grid_width then
 			tab_x = margin
 			tab_y = tab_y + 28
 		end
@@ -103,8 +136,6 @@ function Component:_rebuild()
 	end
 
 	local content_top = tab_bottom + 14
-	local details_width = math.max(280, width * 0.27)
-	local grid_width = width - details_width - margin * 3
 	local grid_height = math.min(170, height - content_top - 70)
 
 	self._panel:rect({
@@ -150,14 +181,18 @@ function Component:_rebuild()
 			local icon = get_part_icon(part.id)
 
 			if DB:has(Idstring("texture"), Idstring(icon)) then
-				cell:bitmap({
+				local icon_x = 8
+				local icon_y = 8
+				local icon_width = cell:w() - 16
+				local icon_height = cell:h() - 60
+				local bitmap = cell:bitmap({
 					texture = icon,
-					blend_mode = "add",
-					x = 8,
-					y = 8,
-					w = cell:w() - 16,
-					h = cell:h() - 60
+					blend_mode = "add"
 				})
+
+				bitmap:set_valign("scale")
+				bitmap:set_halign("scale")
+				fit_bitmap_in_frame(bitmap, icon_x, icon_y, icon_width, icon_height)
 			end
 
 			cell:text({
@@ -236,8 +271,8 @@ function Component:_rebuild()
 	local stats_top = weapon_name:bottom() + 14
 	local stats_height = math.max(0, tabs_top - stats_top - 12)
 
-	self:_draw_weapon_stats(margin, stats_top, math.min(500, grid_width), stats_height)
-	self:_draw_part_details(width - details_width - margin, 18, details_width, height - 108)
+	self:_draw_part_details(margin, stats_top, grid_width, stats_height)
+	self:_draw_weapon_stats(stats_x, 18, stats_width, height - 72)
 end
 
 function Component:_draw_part_details(x, y, width, height)
@@ -250,15 +285,20 @@ function Component:_draw_part_details(x, y, width, height)
 		return
 	end
 
+	local padding = 16
+	local information_width = math.max(220, math.floor(width * 0.3))
+	local information_x = width - information_width
+	local description_width = information_x - padding * 2
+
 	panel:text({
 		text = upper(part.name),
 		font = LARGE_FONT,
 		font_size = 28,
 		color = COLORS.text,
-		x = 16,
-		y = 14,
-		w = width - 32,
-		h = 70,
+		x = padding,
+		y = 10,
+		w = description_width,
+		h = 48,
 		wrap = true,
 		word_wrap = true
 	})
@@ -270,35 +310,44 @@ function Component:_draw_part_details(x, y, width, height)
 		font = FONT,
 		font_size = 22,
 		color = status_color,
-		x = 16,
-		y = 92,
-		w = width - 32,
+		x = padding,
+		y = 60,
+		w = description_width,
 		h = 28
 	})
 
-	local part_tweak = tweak_data.blackmarket.weapon_mods[part.id] or {}
-	local description = part_tweak.desc_id and managers.localization:text(part_tweak.desc_id) or ""
+	local description = BE.ServiceWeaponModification:get_part_description(self._data.weapon, part)
 
 	panel:text({
 		text = description,
 		font = FONT,
 		font_size = 18,
 		color = COLORS.text,
-		x = 16,
-		y = 124,
-		w = width - 32,
-		h = 90,
+		x = padding,
+		y = 94,
+		w = description_width,
+		h = math.max(0, height - 106),
 		wrap = true,
 		word_wrap = true
 	})
+
+	panel:rect({
+		x = information_x,
+		y = 12,
+		w = 1,
+		h = math.max(0, height - 24),
+		color = COLORS.button_stage_3,
+		alpha = 0.8
+	})
+
 	panel:text({
 		text = managers.localization:text("bbm_part_owned", { AMOUNT = part.amount }),
 		font = FONT,
 		font_size = 20,
 		color = COLORS.text,
-		x = 16,
-		y = 224,
-		w = width - 32,
+		x = information_x + padding,
+		y = 18,
+		w = information_width - padding * 2,
 		h = 25
 	})
 	panel:text({
@@ -308,9 +357,9 @@ function Component:_draw_part_details(x, y, width, height)
 		font = FONT,
 		font_size = 20,
 		color = COLORS.text,
-		x = 16,
-		y = 252,
-		w = width - 32,
+		x = information_x + padding,
+		y = 50,
+		w = information_width - padding * 2,
 		h = 25
 	})
 
@@ -319,22 +368,14 @@ function Component:_draw_part_details(x, y, width, height)
 	)
 	local detection_risk = math.round((suspicion or 0) * 100)
 
-	panel:rect({
-		x = 0,
-		y = height - 112,
-		w = width,
-		h = 1,
-		color = COLORS.button_stage_3,
-		alpha = 0.8
-	})
 	panel:text({
 		text = managers.localization:text("bbm_detection_risk", { RISK = detection_risk }),
 		font = FONT,
 		font_size = 21,
 		color = COLORS.friend,
-		x = 16,
-		y = height - 100,
-		w = width - 32,
+		x = information_x + padding,
+		y = 82,
+		w = information_width - padding * 2,
 		h = 28
 	})
 
@@ -347,9 +388,9 @@ function Component:_draw_part_details(x, y, width, height)
 		font = FONT,
 		font_size = 21,
 		color = action and COLORS.button_stage_2 or COLORS.important_1,
-		x = 16,
+		x = information_x + padding,
 		y = height - 45,
-		w = width - 32,
+		w = information_width - padding * 2,
 		h = 30,
 		align = "right"
 	})
@@ -362,15 +403,31 @@ function Component:_draw_weapon_stats(x, y, width, height)
 
 	local panel = self._panel:panel({ x = x, y = y, w = width, h = height })
 	panel:rect({ color = Color.black, alpha = 0.45 })
+	panel:rect({
+		x = 0,
+		y = 0,
+		w = 2,
+		h = height,
+		color = COLORS.button_stage_3,
+		alpha = 0.9
+	})
 	local title = panel:text({
 		text = managers.localization:text("bbm_weapon_stats"),
-		font = FONT,
-		font_size = 20,
+		font = LARGE_FONT,
+		font_size = 28,
 		color = COLORS.friend,
-		x = 10,
-		y = 4,
-		w = width - 20,
-		h = 24
+		x = 14,
+		y = 8,
+		w = width - 28,
+		h = 36
+	})
+	panel:rect({
+		x = 14,
+		y = title:bottom() + 2,
+		w = width - 28,
+		h = 1,
+		color = COLORS.button_stage_3,
+		alpha = 0.55
 	})
 
 	local stats = BE.PresenterWeaponStatistics:get_data(self._data.weapon, self:_selected_part())
@@ -379,24 +436,25 @@ function Component:_draw_weapon_stats(x, y, width, height)
 		panel:text({
 			text = managers.localization:text("bbm_weapon_stats_calculation_unavailable"),
 			font = FONT,
-			font_size = 16,
+			font_size = 20,
 			color = COLORS.text,
-			x = 10,
-			y = title:bottom() + 2,
-			w = width - 20,
-			h = 44,
+			x = 14,
+			y = title:bottom() + 8,
+			w = width - 28,
+			h = 60,
 			wrap = true,
 			word_wrap = true
 		})
 		return
 	end
 
-	local inner_width = width - 20
-	local label_width = math.floor(inner_width * 0.42)
+	local horizontal_padding = 14
+	local inner_width = width - horizontal_padding * 2
+	local label_width = math.floor(inner_width * 0.4)
 	local value_width = math.floor((inner_width - label_width) / 4)
-	local header_y = title:bottom() + 1
-	local row_y = header_y + 16
-	local row_height = 15
+	local header_y = title:bottom() + 8
+	local row_y = header_y + 24
+	local row_height = 22
 	local max_rows = math.max(0, math.floor((height - row_y - 4) / row_height))
 	local headers = {
 		{ text = managers.localization:text("bm_menu_stats_total"), color = COLORS.text },
@@ -409,12 +467,12 @@ function Component:_draw_weapon_stats(x, y, width, height)
 		panel:text({
 			text = upper(header.text),
 			font = FONT,
-			font_size = 12,
+			font_size = 15,
 			color = header.color,
-			x = 10 + label_width + (index - 1) * value_width,
+			x = horizontal_padding + label_width + (index - 1) * value_width,
 			y = header_y,
 			w = value_width,
-			h = 15,
+			h = 20,
 			align = "right"
 		})
 	end
@@ -453,9 +511,9 @@ function Component:_draw_weapon_stats(x, y, width, height)
 
 		if index % 2 == 0 then
 			panel:rect({
-				x = 12,
+				x = horizontal_padding,
 				y = row_position_y,
-				w = panel:w() - 24,
+				w = inner_width,
 				h = row_height,
 				color = Color.black,
 				alpha = 0.25
@@ -465,31 +523,34 @@ function Component:_draw_weapon_stats(x, y, width, height)
 		panel:text({
 			text = upper(stat.name),
 			font = FONT,
-			font_size = 12,
+			font_size = 17,
 			color = COLORS.text,
-			x = 10,
+			x = horizontal_padding,
 			y = row_position_y,
 			w = label_width,
 			h = row_height,
 			ellipsis = true
 		})
+
+		local extended_value = stat.base == nil and stat.mods == nil and stat.skill == nil
+
 		panel:text({
 			text = stat.total or "",
 			font = FONT,
-			font_size = 12,
+			font_size = 17,
 			color = stat.changed and COLORS.button_stage_2 or total_colors[stat.total_color] or COLORS.text,
-			x = 10 + label_width,
+			x = horizontal_padding + label_width,
 			y = row_position_y,
-			w = value_width,
+			w = extended_value and inner_width - label_width or value_width,
 			h = row_height,
 			align = "right"
 		})
 		panel:text({
 			text = stat.base or "",
 			font = FONT,
-			font_size = 12,
+			font_size = 17,
 			color = COLORS.text,
-			x = 10 + label_width + value_width,
+			x = horizontal_padding + label_width + value_width,
 			y = row_position_y,
 			w = value_width,
 			h = row_height,
@@ -498,9 +559,9 @@ function Component:_draw_weapon_stats(x, y, width, height)
 		panel:text({
 			text = stat.mods or "",
 			font = FONT,
-			font_size = 12,
+			font_size = 17,
 			color = COLORS.stats_mods,
-			x = 10 + label_width + value_width * 2,
+			x = horizontal_padding + label_width + value_width * 2,
 			y = row_position_y,
 			w = value_width,
 			h = row_height,
@@ -509,9 +570,9 @@ function Component:_draw_weapon_stats(x, y, width, height)
 		panel:text({
 			text = stat.skill or "",
 			font = FONT,
-			font_size = 12,
+			font_size = 17,
 			color = COLORS.resource,
-			x = 10 + label_width + value_width * 3,
+			x = horizontal_padding + label_width + value_width * 3,
 			y = row_position_y,
 			w = value_width,
 			h = row_height,
