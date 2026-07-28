@@ -2,9 +2,18 @@
 	"name" : "Briefing Enhanced",
 	"description" : "Manage skills, perk decks, outfits, gloves, weapon selection, purchases, sales, drag-and-drop inventory integration, modifications and statistics, and PD2Builder builds from the mission briefing.",
 	"author" : "CptTroufion",
-	"version" : "1.10.1",
+	"version" : "1.10.2",
 	"blt_version" : 2,
 	"priority" : -100,
+	"updates" : [
+		{
+			"identifier" : "briefing_enhanced",
+			"host" : {
+				"meta" : "https://raw.githubusercontent.com/CptTroufion/Briefing-Build-Menu/main/updates/meta.json",
+				"patchnotes" : "https://modworkshop.net/mod/57999"
+			}
+		}
+	],
 	"hooks" : [
 		{
 			"hook_id" : "lib/managers/menu/menucomponentmanager",

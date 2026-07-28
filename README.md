@@ -2,10 +2,9 @@
 
 **Briefing Enhanced** extends the PAYDAY 2 mission briefing with a central `BUILD` menu. Configure skills, perk decks, outfits, gloves and weapons without leaving the lobby, then modify owned weapons through a briefing-safe 2D interface.
 
-Version: **1.10.0**  
+Version: **1.10.2**  
 Author: **CptTroufion**  
 Required: **PAYDAY 2 + SuperBLT**
-Optional: **BeardLib for automatic update checks and installation**
 
 - [English](#english)
 - [Français](#français)
@@ -39,14 +38,13 @@ Briefing Enhanced therefore reuses vanilla weapon data, compatibility rules, pri
 ## Installation
 
 1. Install [SuperBLT](https://superblt.znix.xyz/).
-2. Install [BeardLib](https://modworkshop.net/mod/14924) if you want in-game update checks.
-3. Copy `Briefing Build Menu` into `PAYDAY 2/mods/`.
-4. Ensure `mod.txt` and `main.xml` are directly inside that folder.
-5. Start or restart PAYDAY 2.
+2. Copy the mod folder into `PAYDAY 2/mods/`.
+3. Ensure `mod.txt` is directly inside that folder.
+4. Start or restart PAYDAY 2.
 
 SuperBLT displays the installed mod as **Briefing Enhanced**.
 
-When BeardLib is installed, it checks the official [ModWorkshop page](https://modworkshop.net/mod/57999) from the main menu. Updates are shown in the BeardLib Mods Manager and remain user-confirmed; restart PAYDAY 2 after installation.
+SuperBLT checks the GitHub update metadata from the main menu and downloads the archive associated with the published tag. Update installation remains user-confirmed; restart PAYDAY 2 after installation.
 
 ## Usage
 
@@ -87,7 +85,6 @@ Optional mods are detected at runtime and are not bundled.
 | More Weapon Stats | Adds its extended statistic rows | Vanilla weapon statistics |
 | PD2Builder loader | Adds build import and export entries | Entries are hidden |
 | Market Favorites | Its hooks decorate the reused weapon, outfit and glove grids automatically | Unmodified vanilla grids |
-| BeardLib | Checks ModWorkshop for newer semantic versions and installs the selected update | The mod runs normally without automatic updates |
 
 ## Limitations
 
@@ -104,6 +101,12 @@ See [the technical documentation](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md
 
 ## Patch notes
 
+### v1.10.2
+
+- Migrated automatic updates to the native SuperBLT updater.
+- Updates now resolve through GitHub metadata and download the archive for the matching release tag.
+- Removed the obsolete updater manifest and optional updater dependency.
+
 ### v1.10.0
 
 #### Added
@@ -119,7 +122,6 @@ See [the technical documentation](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md
 - Large right-side vanilla weapon statistics with optional More Weapon Stats rows.
 - Optional PD2Builder import and export.
 - Automatic compatibility with Market Favorites on reused vanilla grids.
-- BeardLib update checks and user-confirmed installation from the official ModWorkshop page.
 
 #### Improved
 
@@ -168,7 +170,7 @@ See [the technical documentation](TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md
 - Installation, remplacement et retrait avec les confirmations et transactions vanilla.
 - Statistiques `TOTAL / BASE / MOD / SKILL`.
 - Intégrations optionnelles avec Drag and Drop Inventory, More Weapon Stats et PD2Builder loader.
-- Mise à jour intégrée optionnelle avec BeardLib.
+- Mise à jour intégrée avec l’updater natif SuperBLT.
 - Compatibilité avec le chat du briefing, EHI et les grilles décorées par Market Favorites.
 
 ## Pourquoi une interface 2D ?
@@ -180,14 +182,13 @@ Le mod réutilise donc les données, règles de compatibilité, prix, confirmati
 ## Installation
 
 1. Installer [SuperBLT](https://superblt.znix.xyz/).
-2. Installer [BeardLib](https://modworkshop.net/mod/14924) pour bénéficier de la vérification des mises à jour.
-3. Copier `Briefing Build Menu` dans `PAYDAY 2/mods/`.
-4. Vérifier que `mod.txt` et `main.xml` se trouvent directement dans ce dossier.
-5. Démarrer ou redémarrer PAYDAY 2.
+2. Copier le dossier du mod dans `PAYDAY 2/mods/`.
+3. Vérifier que `mod.txt` se trouve directement dans ce dossier.
+4. Démarrer ou redémarrer PAYDAY 2.
 
 SuperBLT affiche le mod sous le nom **Briefing Enhanced**.
 
-Avec BeardLib, la page officielle [ModWorkshop](https://modworkshop.net/mod/57999) est vérifiée depuis le menu principal. Le téléchargement reste confirmé par l'utilisateur dans le gestionnaire BeardLib. Redémarrer PAYDAY 2 après l'installation.
+SuperBLT consulte les métadonnées GitHub depuis le menu principal et télécharge l’archive associée au tag publié. L’installation reste confirmée par l’utilisateur ; redémarrer PAYDAY 2 après celle-ci.
 
 ## Utilisation
 
@@ -206,7 +207,6 @@ L'entrée `BUILD` cible l'arme équipée. Le menu BlackMarket cible le slot poss
 | More Weapon Stats | Lignes de statistiques étendues | Statistiques vanilla |
 | PD2Builder loader | Import et export de build | Entrées masquées |
 | Market Favorites | Décoration automatique des grilles vanilla réutilisées | Grilles vanilla inchangées |
-| BeardLib | Vérification des versions sémantiques et installation depuis ModWorkshop | Le mod fonctionne normalement sans mise à jour automatique |
 
 ## Limites
 
@@ -221,7 +221,7 @@ Le code suit le principe « une fonctionnalité, un dossier ». Consulter [la do
 
 ## Notes de version
 
-La liste détaillée de la version **1.10.0** se trouve dans la section anglaise [Patch notes](#patch-notes). Les entrées historiques 1.8.1, 1.7.1 et 1.7.0 y sont également conservées.
+La liste détaillée de la version **1.10.2** se trouve dans la section anglaise [Patch notes](#patch-notes). Les entrées historiques y sont également conservées.
 
 ## Credits
 

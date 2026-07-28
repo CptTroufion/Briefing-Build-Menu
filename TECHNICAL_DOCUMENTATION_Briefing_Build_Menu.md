@@ -1,6 +1,6 @@
 # Briefing Enhanced — Technical Documentation
 
-Reference for **Briefing Enhanced 1.10.0**, targeting PAYDAY 2, SuperBLT and LuaJIT/Lua 5.1.
+Reference for **Briefing Enhanced 1.10.2**, targeting PAYDAY 2, SuperBLT and LuaJIT/Lua 5.1.
 
 - [English reference](#english-reference)
 - [Référence française](#référence-française)
@@ -65,7 +65,8 @@ Hooks may compose modules, but lower-level modules must not depend on hook files
 ```text
 Briefing Build Menu/
 ├── mod.txt
-├── main.xml
+├── updates/
+│   └── meta.json
 ├── README.md
 ├── TECHNICAL_DOCUMENTATION_Briefing_Build_Menu.md
 └── lua/
@@ -84,8 +85,8 @@ Briefing Build Menu/
 
 | Path | Ownership |
 |---|---|
-| `mod.txt` | SuperBLT identity, version and game-script hooks |
-| `main.xml` | BeardLib `AssetUpdates` declaration for the official ModWorkshop release |
+| `mod.txt` | SuperBLT identity, version, native updater declaration and game-script hooks |
+| `updates/meta.json` | Remote SuperBLT version metadata and direct release archive URL |
 | `core/` | Bootstrap, constants, session state, navigation, dialogs, outfit synchronization and legacy facade |
 | `briefing_menu/` | BUILD button, QuickMenu options and custom `kit_menu` node registration |
 | `skill_tree/` | Vanilla skill-tree opening, briefing restrictions and close cleanup |
@@ -277,11 +278,11 @@ Adapters isolate version checks, globals and fallback behavior.
 | EHI | `compatibility/adapter_ehi.lua` | `MissionBriefingGui.AddXPBreakdown` exists | Track injected XP elements; hide/restore them with custom sessions | No overlay mutation |
 | Chat/translator | `compatibility/adapter_chat.lua` | Core chat classes; translator path additionally requires `ChatTranslatorMessage` | Keep briefing chat accessible; preserve translation hook | Base screens still operate |
 | Market Favorites | No adapter by design | Its hooks run on the reused vanilla populate methods | Favorites actions, badges and ordering appear automatically | Vanilla grid remains unchanged |
-| BeardLib updater | No Lua adapter; `main.xml` | BeardLib loads `AssetUpdates` and queries ModWorkshop mod `57999` | Check semantic versions at the main menu; expose a user-confirmed download/install action | The mod runs normally without update checks |
+| SuperBLT updater | No Lua adapter; `mod.txt` and `updates/meta.json` | SuperBLT can read the raw GitHub metadata URL | Compare the installed version and download the matching GitHub tag archive after user confirmation | The runtime mod remains independent from the update host |
 
 Availability is evaluated at the point of use when dependency initialization order can vary. Adapter installation and wrapper hooks are idempotent. Core services must not retain dependency-owned data structures.
 
-The updater is intentionally declarative and separate from runtime feature adapters. Do not add a second SuperBLT `updates` definition: two update managers for the same release would produce competing notifications and installation paths.
+The updater is declarative and separate from runtime feature adapters. Keep one stable update `identifier`, one metadata URL and one matching metadata entry. The version in `mod.txt`, the metadata and the downloaded archive must be identical.
 
 ## 10. Compatibility policy
 
@@ -696,33 +697,46 @@ table.insert(options, {
 })
 ```
 
-### 11.10 Tutorial: publish a BeardLib-compatible update
+### 11.10 Tutorial: publish a native SuperBLT update
 
-`main.xml` is the only updater declaration:
+`mod.txt` declares one stable update source:
 
-```xml
-<table name="Briefing Enhanced">
-	<AssetUpdates
-		id="57999"
-		provider="modworkshop"
-		version="1.10.0"
-		semantic_version="true"
-	/>
-</table>
+```json
+"updates": [
+	{
+		"identifier": "briefing_enhanced",
+		"host": {
+			"meta": "https://raw.githubusercontent.com/CptTroufion/Briefing-Build-Menu/main/updates/meta.json",
+			"patchnotes": "https://modworkshop.net/mod/57999"
+		}
+	}
+]
+```
+
+The repository file `updates/meta.json` describes the version to download:
+
+```json
+[
+	{
+		"ident": "briefing_enhanced",
+		"version": "1.10.2",
+		"download_url": "https://github.com/CptTroufion/Briefing-Build-Menu/archive/refs/tags/v1.10.2.zip",
+		"patchnotes_url": "https://modworkshop.net/mod/57999"
+	}
+]
 ```
 
 For every release:
 
-1. Choose one semantic version without a `v` prefix in repository files, for example `1.11.0`.
-2. Set the same version in `mod.txt` and `main.xml`.
-3. Publish that version on ModWorkshop mod `57999`. BeardLib accepts the `v` prefix returned by ModWorkshop, but repository files remain normalized.
-4. Build a ZIP with exactly one top-level `Briefing Build Menu/` directory containing `mod.txt`, `main.xml`, documentation and `lua/`.
-5. Keep the default full replacement. Do not set `dont_delete="true"`; stale Lua files are more dangerous than a clean install.
-6. Never persist user settings inside the mod directory because an update replaces it. Use `SavePath`.
-7. Install the previous public version in a disposable game copy, open the main menu and verify that BeardLib reports the new version.
-8. Confirm the download, restart PAYDAY 2, then verify the installed files and displayed version.
+1. Choose one version without a `v` prefix in JSON values, for example `1.11.0`.
+2. Set that exact value in `mod.txt` and `updates/meta.json`; do not change `briefing_enhanced`.
+3. Commit both files, then create the matching Git tag on that commit with a `v` prefix, for example `v1.11.0`.
+4. Push the `main` branch and the tag together so the metadata never points at a missing archive.
+5. Verify that the `download_url` returns a ZIP containing exactly one top-level directory and that its `mod.txt` reports the same version.
+6. Test from the previous public version: open the main menu, confirm the SuperBLT update, restart the game, and verify the installed version.
+7. Publish the ModWorkshop changelog or release announcement only after the update path has passed this test.
 
-The automatic part is the check and notification. Download and installation remain user-confirmed. Do not call `BeardLib.Menus.Mods:ForceDownload` from the mod.
+SuperBLT checks metadata automatically, but download and installation remain user-confirmed. It extracts the single GitHub archive root and installs its contents into the existing mod directory. Never store user settings in the mod directory; use `SavePath`.
 
 ### 11.11 Review checklist for a change
 
@@ -755,7 +769,7 @@ Before considering an implementation complete:
 | Statistics | Current vs selected part; MWS enabled/disabled | Correct vanilla values; optional rows only when available |
 | Drag/drop | Dependency absent/disabled/enabled; move/swap/place/cancel | Safe fallback; profiles/bots remain consistent |
 | HUD/chat | EHI and supported HUD/chat mods enabled/disabled | Overlays restore; chat remains usable |
-| Updater | BeardLib absent; present with equal/lower/higher remote version; Ignore Updates enabled; valid/invalid ZIP | Base mod works without BeardLib; only a higher semantic version is offered; invalid downloads do not replace the installed mod |
+| Updater | Metadata reachable/unreachable; installed and remote versions equal/different; valid/invalid ZIP; archive version mismatch | Runtime works when the host is unavailable; a different remote version is offered; invalid or mismatched archives do not replace the installed mod |
 | Session roles | Host and client; ready/unready; return to menu | No stale state or peer requirement |
 | Reload | Restart game; optional SuperBLT reload if used locally | No duplicate hook/component |
 
@@ -763,7 +777,7 @@ Static checks:
 
 ```powershell
 Get-Content -Raw "Briefing Build Menu/mod.txt" | ConvertFrom-Json
-[xml](Get-Content -Raw "Briefing Build Menu/main.xml") | Out-Null
+Get-Content -Raw "Briefing Build Menu/updates/meta.json" | ConvertFrom-Json
 rg -n "log\(|Application:error|io\.write|print\(" "Briefing Build Menu/lua"
 rg -n "BriefingBuildMenu_|bbm_" "Briefing Build Menu/lua"
 ```
@@ -825,8 +839,8 @@ Composant -> Vue
 
 | Chemin | Responsabilité |
 |---|---|
-| `mod.txt` | Identité, version et hooks de scripts SuperBLT |
-| `main.xml` | Déclaration BeardLib `AssetUpdates` pour la publication ModWorkshop officielle |
+| `mod.txt` | Identité, version, déclaration de mise à jour native et hooks de scripts SuperBLT |
+| `updates/meta.json` | Métadonnées de version SuperBLT et URL directe de l’archive de publication |
 | `lua/core/` | Bootstrap, constantes, état de session, navigation, dialogues, synchronisation d'outfit et façade historique |
 | `lua/briefing_menu/` | Bouton BUILD, QuickMenu et enregistrement des nœuds `kit_menu` |
 | `lua/skill_tree/` | Ouverture, restrictions et fermeture de l'arbre de compétences |
@@ -967,11 +981,11 @@ Le menu BUILD teste `AdapterPd2Builder:is_available()`. Les scripts de la dépen
 | EHI | `compatibility/adapter_ehi.lua` | `AddXPBreakdown` disponible | Suivi puis masquage/restauration des éléments XP | Aucune mutation |
 | Chat/traducteur | `compatibility/adapter_chat.lua` | Classes chat ; `ChatTranslatorMessage` pour la traduction | Accès au chat et chaîne de traduction conservés | Fonctionnalités principales inchangées |
 | Market Favorites | Aucun, volontairement | Hooks externes sur les populateurs vanilla réutilisés | Actions, badges et tri ajoutés par ce mod | Grilles vanilla |
-| Mise à jour BeardLib | Aucun adaptateur Lua ; `main.xml` | BeardLib charge `AssetUpdates` et interroge le mod ModWorkshop `57999` | Comparaison sémantique au menu principal et téléchargement/install confirmé par l'utilisateur | Le mod fonctionne normalement sans vérification |
+| Mise à jour SuperBLT | Aucun adaptateur Lua ; `mod.txt` et `updates/meta.json` | SuperBLT peut lire l’URL brute des métadonnées GitHub | Comparaison de la version installée et téléchargement de l’archive du tag GitHub après confirmation | Le runtime reste indépendant de l’hébergeur de mise à jour |
 
 La disponibilité est testée au moment utile lorsque l'ordre d'initialisation peut varier. Les installations sont idempotentes. Aucun service principal ne conserve une structure de données appartenant à une dépendance.
 
-L'updater est volontairement déclaratif et séparé des adaptateurs runtime. Ne pas ajouter en parallèle une section `updates` SuperBLT : deux gestionnaires pour une même publication provoqueraient des notifications et chemins d'installation concurrents.
+L’updater est déclaratif et séparé des adaptateurs runtime. Conserver un seul `identifier`, une URL de métadonnées et une entrée distante correspondante. La version de `mod.txt`, des métadonnées et de l’archive téléchargée doit être strictement identique.
 
 ## 10. Politique de compatibilité
 
@@ -1394,33 +1408,46 @@ table.insert(options, {
 })
 ```
 
-### 11.10 Tutoriel : publier une mise à jour compatible BeardLib
+### 11.10 Tutoriel : publier une mise à jour native SuperBLT
 
-`main.xml` constitue l'unique déclaration de mise à jour :
+`mod.txt` déclare une source stable :
 
-```xml
-<table name="Briefing Enhanced">
-	<AssetUpdates
-		id="57999"
-		provider="modworkshop"
-		version="1.10.0"
-		semantic_version="true"
-	/>
-</table>
+```json
+"updates": [
+	{
+		"identifier": "briefing_enhanced",
+		"host": {
+			"meta": "https://raw.githubusercontent.com/CptTroufion/Briefing-Build-Menu/main/updates/meta.json",
+			"patchnotes": "https://modworkshop.net/mod/57999"
+		}
+	}
+]
+```
+
+Le fichier `updates/meta.json` du repository décrit la version téléchargeable :
+
+```json
+[
+	{
+		"ident": "briefing_enhanced",
+		"version": "1.10.2",
+		"download_url": "https://github.com/CptTroufion/Briefing-Build-Menu/archive/refs/tags/v1.10.2.zip",
+		"patchnotes_url": "https://modworkshop.net/mod/57999"
+	}
+]
 ```
 
 Pour chaque publication :
 
-1. Choisir une version sémantique sans préfixe `v` dans le repository, par exemple `1.11.0`.
-2. Reporter exactement cette version dans `mod.txt` et `main.xml`.
-3. Publier cette version sur le mod ModWorkshop `57999`. BeardLib accepte le préfixe `v` renvoyé par ModWorkshop, mais les fichiers du repository restent normalisés.
-4. Construire un ZIP possédant un seul dossier racine `Briefing Build Menu/`, qui contient directement `mod.txt`, `main.xml`, la documentation et `lua/`.
-5. Conserver le remplacement complet par défaut. Ne pas définir `dont_delete="true"` : un ancien script Lua résiduel est plus dangereux qu'une installation propre.
-6. Ne jamais stocker les préférences utilisateur dans le dossier du mod, car il est remplacé. Employer `SavePath`.
-7. Installer l'ancienne version publique dans une copie de test, ouvrir le menu principal et vérifier que BeardLib détecte la nouvelle version.
-8. Confirmer le téléchargement, redémarrer PAYDAY 2 puis vérifier les fichiers installés et la version affichée.
+1. Choisir une version sans préfixe `v` dans les valeurs JSON, par exemple `1.11.0`.
+2. Reporter exactement cette valeur dans `mod.txt` et `updates/meta.json` sans modifier `briefing_enhanced`.
+3. Committer les deux fichiers puis créer sur ce commit le tag correspondant avec le préfixe `v`, par exemple `v1.11.0`.
+4. Pousser ensemble la branche `main` et le tag afin que les métadonnées ne pointent jamais vers une archive absente.
+5. Vérifier que `download_url` renvoie un ZIP avec un seul dossier racine et que son `mod.txt` porte exactement la même version.
+6. Partir de la version publique précédente, ouvrir le menu principal, confirmer la mise à jour SuperBLT, redémarrer le jeu et contrôler la version installée.
+7. Publier ensuite le changelog ModWorkshop ou l’annonce de release.
 
-La vérification et la notification sont automatiques. Le téléchargement et l'installation restent confirmés par l'utilisateur. Ne pas appeler `BeardLib.Menus.Mods:ForceDownload` depuis le mod.
+SuperBLT vérifie automatiquement les métadonnées, mais le téléchargement et l’installation restent confirmés par l’utilisateur. Il extrait le dossier racine unique de l’archive GitHub puis installe son contenu dans le dossier actuel du mod. Les préférences utilisateur doivent rester sous `SavePath`.
 
 ### 11.11 Checklist de review
 
@@ -1453,7 +1480,7 @@ Avant de considérer l'implémentation terminée :
 | Statistiques | Pièce courante/sélectionnée ; MWS actif/inactif | Valeurs vanilla ; lignes optionnelles conditionnelles |
 | Drag and Drop | Absent/désactivé/actif ; move/swap/place/cancel | Repli sûr ; profils/bots cohérents |
 | HUD/chat | EHI et HUD/chat compatibles actifs/inactifs | Overlays restaurés ; chat utilisable |
-| Updater | BeardLib absent ; version distante égale/inférieure/supérieure ; Ignore Updates ; ZIP valide/invalide | Mod fonctionnel sans BeardLib ; seule une version sémantique supérieure est proposée ; une archive invalide ne remplace pas le mod |
+| Updater | Métadonnées accessibles/inaccessibles ; versions locale et distante identiques/différentes ; ZIP valide/invalide ; version d’archive différente | Runtime fonctionnel si l’hôte est indisponible ; une version distante différente est proposée ; une archive invalide ou incohérente ne remplace pas le mod |
 | Session | Hôte/client ; ready/unready ; retour menu | Aucun état résiduel ni exigence côté pair |
 | Rechargement | Redémarrage ; reload SuperBLT local si utilisé | Aucun hook/composant dupliqué |
 
@@ -1461,7 +1488,7 @@ Validations statiques :
 
 ```powershell
 Get-Content -Raw "Briefing Build Menu/mod.txt" | ConvertFrom-Json
-[xml](Get-Content -Raw "Briefing Build Menu/main.xml") | Out-Null
+Get-Content -Raw "Briefing Build Menu/updates/meta.json" | ConvertFrom-Json
 rg -n "log\(|Application:error|io\.write|print\(" "Briefing Build Menu/lua"
 rg -n "BriefingBuildMenu_|bbm_" "Briefing Build Menu/lua"
 ```
